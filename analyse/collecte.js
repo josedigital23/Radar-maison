@@ -95,8 +95,16 @@ const norm = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase
 const rev = (await j(`https://api-adresse.data.gouv.fr/reverse/?lon=${P.lon}&lat=${P.lat}&limit=1`)).features?.[0]?.properties || {};
 const adr = dp?.adresse_ban || rev.label || '';
 const num = (adr.match(/^(\d+)/) || [])[1], rue = dp?.nom_rue_ban || rev.street || '';
+// Deux pièges de l'ancienne base, vérifiés le 10/10/2026 sur Paray-le-Monial :
+// 1. « code_insee_commune_actualise » contient tantôt l'INSEE (71342), tantôt le CODE POSTAL (71600) :
+//    311 DPE sous l'un, 72 de plus sous l'autre. On cherche sur les deux.
+// 2. « geo_adresse » n'accepte qu'une adresse ENTIÈRE et exacte : geo_adresse:"14 Rue Parmentier" → 0 résultat,
+//    alors que "14 Rue Parmentier" en texte libre → 2. L'historique ancien ne trouvait donc jamais rien.
+//    On cherche en texte libre ; le filtre startsWith ci-dessous garde la précision.
+// Syntaxe : champ:(A OR B). La forme (champ:A OR champ:B) AND "…" fait ignorer toute la requête par l'API.
+const cpAdr = dp?.code_postal_ban || rev.postcode || '';
 const hist = adr ? (await j(`https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines?qs=${encodeURIComponent(`adresse_ban:"${adr}"`)}&size=20&select=numero_dpe,date_etablissement_dpe,etiquette_dpe,surface_habitable_logement,type_energie_principale_chauffage`)).results || [] : [];
-const anc = (num && rue) ? (await j(`https://data.ademe.fr/data-fair/api/v1/datasets/dpe-france/lines?qs=${encodeURIComponent(`code_insee_commune_actualise:${P.insee} AND geo_adresse:"${num} ${rue}"`)}&size=20&select=numero_dpe,date_etablissement_dpe,classe_consommation_energie,surface_thermique_lot,geo_adresse`)).results || [] : [];
+const anc = (num && rue) ? (await j(`https://data.ademe.fr/data-fair/api/v1/datasets/dpe-france/lines?qs=${encodeURIComponent(`code_insee_commune_actualise:(${P.insee}${cpAdr ? ' OR ' + cpAdr : ''}) AND "${num} ${rue}"`)}&size=20&select=numero_dpe,date_etablissement_dpe,classe_consommation_energie,surface_thermique_lot,geo_adresse`)).results || [] : [];
 O.historique_dpe = [...hist.map(x => `${x.date_etablissement_dpe} · ${x.etiquette_dpe} · ${x.surface_habitable_logement} m² · ${x.type_energie_principale_chauffage} · ${x.numero_dpe}`),
   ...anc.filter(x => norm(x.geo_adresse).startsWith(norm(num + ' ' + rue))).map(x => `${x.date_etablissement_dpe} · ${x.classe_consommation_energie} · ${x.surface_thermique_lot} m² · ancienne base · ${x.numero_dpe}`)].sort();
 

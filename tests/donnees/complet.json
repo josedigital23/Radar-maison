@@ -1,0 +1,9 @@
+{"titre":"Test complet","adresse":"1 rue X","prix":210000,"surface":150,"chambres":4,"style":"pierre_charme","terrain":2000,
+"garage_ou_abri":true,"atelier":false,"piscine":false,"connexion":"fibre",
+"trajets":{"travail":{"dest":"Bureau","min":12,"km":10},"ecole":{"dest":"Ecole","min":6,"km":4},"supermarche":{"dest":"Inter","min":8,"km":6},"depannage":{"dest":"Boulangerie","min":3,"km":2},"sport":{"dest":"Salle","min":15,"km":12}},
+"isolement":{"voisin_m":120,"maisons_100m":0,"maisons_250m":3,"vis_a_vis":false},
+"couts_annuels":{"Énergie":2800,"Taxe foncière":1400},
+"dvf":{"comparables":[{"date":"2024-01-01","valeur":180000,"surface":140,"terrain":1500,"eur_m2":1286},{"date":"2023-01-01","valeur":200000,"surface":160,"terrain":1500,"eur_m2":1250},{"date":"2022-01-01","valeur":150000,"surface":120,"terrain":1500,"eur_m2":1250}]},
+"dpe":{"lettre":"D","kwh":220,"ges":"B","chauffage":"bois"},
+"depenses_a_venir":[{"poste":"Toiture","min":10000,"max":20000,"source":"devis"},{"poste":"Fosse","min":5000,"max":9000,"certain":false}],
+"questions_visite":[{"question":"Q?","ou":"vendeur","pourquoi":"x"}]}

@@ -1,0 +1,7 @@
+{
+  "_note": "Critères personnels de notation. Copier ce fichier (ex. profil-compagne.json) et le passer en 3e argument à rapport.py pour noter selon d'autres critères.",
+  "nom": "Victorien",
+  "budget": {"confortable": 250000, "acceptable": 300000, "plafond": 335000},
+  "maison": {"surface_ideale": 125, "surface_min": 100, "chambres_min": 3},
+  "seuil_verdict_pct": 60
+}

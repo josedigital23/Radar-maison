@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Note un bien et produit le rapport HTML visuel. Usage : python3 rapport.py data.json sortie.html"""
-import json, sys, html, statistics as st
+"""Note un bien et produit le rapport HTML visuel.
+Usage : python3 rapport.py data.json sortie.html [profil.json]
+Sans profil, on prend profil.json à côté du script (les critères de Victorien)."""
+import json, sys, html, statistics as st, os
 
 D = json.load(open(sys.argv[1], encoding="utf-8"))
+PROFIL = json.load(open(sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "profil.json"), encoding="utf-8"))
+B1, B2, B3 = (PROFIL["budget"][k] for k in ("confortable", "acceptable", "plafond"))
+MS = PROFIL["maison"]
 E = html.escape
 eur = lambda v: f"{v:,.0f}".replace(",", " ")
 
@@ -31,9 +36,9 @@ DEP = D.get("depenses_a_venir", [])
 DEP_OK = [x for x in DEP if x.get("certain", True)]  # une dépense supposée (certain: false) est affichée, pas comptée
 travaux = sum((x.get("min", 0) + x.get("max", 0)) / 2 for x in DEP_OK)
 prix = D["prix"]; budget = prix + travaux
-s_budget = palier(budget, [(250000, 1), (300000, .6), (335000, .25)])
+s_budget = palier(budget, [(B1, 1), (B2, .6), (B3, .25)])
 surf, ch = D.get("surface"), D.get("chambres")
-s_taille = None if (surf is None or ch is None) else 1 if (surf >= 125 and ch >= 3) else (.6 if ch >= 3 else .1) if surf >= 100 else 0  # chambres inconnues = à déterminer
+s_taille = None if (surf is None or ch is None) else 1 if (surf >= MS["surface_ideale"] and ch >= MS["chambres_min"]) else (.6 if ch >= MS["chambres_min"] else .1) if surf >= MS["surface_min"] else 0  # chambres inconnues = à déterminer
 s_style = {"pierre_charme": 1, "neuf_recent": .6, "autre": .5, "sous_sol_70_80": .15}.get(D.get("style"))
 s_maison = None if (s_taille is None or s_style is None) else .6 * s_taille + .4 * s_style
 comps = D.get("dvf", {}).get("comparables", [])
@@ -78,7 +83,7 @@ note = min(100, round((pts / W_conn * 100 if W_conn else 0) + bonus))
 GOOD, WARN, SER, CRIT, GRIS = "#0ca30c", "#fab219", "#ec835a", "#d03b3b", "#8a8983"
 # En dessous de ce seuil, la note repose sur trop peu de critères : pas de verdict.
 # Exemple constaté : prix seul connu → 100/100 « Très bonne affaire » sur 15 % des critères.
-SEUIL_VERDICT = 60
+SEUIL_VERDICT = PROFIL.get("seuil_verdict_pct", 60)
 provisoire = couverture < SEUIL_VERDICT
 if provisoire:
     coul, lib, ico = GRIS, "Note provisoire — données insuffisantes", "?"
@@ -94,6 +99,10 @@ def lvl(s):
 
 def jauge(n, col):
     r = 52; c = 2 * math.pi * r
+    if provisoire:  # pas de chiffre géant : un « 100 » même gris se lit comme une excellente note
+        return (f'<svg viewBox="0 0 130 130" width="140" height="140" role="img" aria-label="Note provisoire">'
+                f'<circle cx="65" cy="65" r="{r}" fill="none" stroke="var(--track)" stroke-width="12" stroke-dasharray="6 6"/>'
+                f'<text x="65" y="76" text-anchor="middle" class="big">?</text><text x="65" y="96" text-anchor="middle" class="tick">provisoire</text></svg>')
     return (f'<svg viewBox="0 0 130 130" width="140" height="140" role="img" aria-label="Note {n} sur 100">'
             f'<circle cx="65" cy="65" r="{r}" fill="none" stroke="var(--track)" stroke-width="12"/>'
             f'<circle cx="65" cy="65" r="{r}" fill="none" stroke="{col}" stroke-width="12" stroke-linecap="round" stroke-dasharray="{c*n/100:.1f} {c:.1f}" transform="rotate(-90 65 65)"/>'
@@ -162,14 +171,14 @@ def tr_table():
     return "".join(o)
 
 def budget_svg():
-    W, mx = 1000, 360000
+    W, mx = 1000, max(B3 * 1.075, budget * 1.05)  # l’axe suit le plafond du profil, et le budget s’il le dépasse
     xs = lambda v: 10 + (W - 20) * min(v, mx) / mx
     seg = [("Prix", prix, "#2a78d6")] + [(x["poste"], (x.get("min", 0) + x.get("max", 0)) / 2, SER_COL[(i + 1) % 6]) for i, x in enumerate(DEP_OK)]
     o, cur = [], 0
     for n, v, col in seg:
         o.append(f'<rect x="{xs(cur):.1f}" y="24" width="{max(1, xs(cur+v)-xs(cur)-2):.1f}" height="26" rx="5" fill="{col}"><title>{E(n)} : {eur(v)} €</title></rect>')
         cur += v
-    for v, lab, col, y, anc in [(250000, "250 k", GOOD, 72, "middle"), (300000, "300 k", WARN, 72, "middle"), (335000, "335 k plafond", CRIT, 14, "middle")]:
+    for v, lab, col, y, anc in [(B1, f"{B1//1000} k", GOOD, 72, "middle"), (B2, f"{B2//1000} k", WARN, 72, "middle"), (B3, f"{B3//1000} k plafond", CRIT, 14, "middle")]:
         o.append(f'<line x1="{xs(v):.1f}" x2="{xs(v):.1f}" y1="18" y2="56" stroke="{col}" stroke-width="2" stroke-dasharray="4 3"/><text x="{xs(v):.1f}" y="{y}" text-anchor="{anc}" class="tick">{lab}</text>')
     leg = "".join(f'<span class="lg"><i style="background:{c}"></i>{E(n)} · <b>{eur(v)} €</b></span>' for n, v, c in seg)
     return f'<svg viewBox="0 0 {W} 78" class="wide">{"".join(o)}</svg><div class="legend">{leg}</div>'
@@ -256,7 +265,7 @@ def questions():
         if xs: o.append(f'<div><h3>{titre}</h3>' + "".join(f'<label class="q"><input type="checkbox"><span><b>{E(q["question"])}</b><small>{E(q.get("pourquoi",""))}</small></span></label>' for q in xs) + '</div>')
     return '<div class="g2">' + "".join(o) + '</div>'
 src = "".join(f'<li><a href="{E(u)}">{E(n)}</a></li>' for n, u in D.get("sources", []))
-bud_col = GOOD if budget <= 250000 else WARN if budget <= 300000 else SER if budget <= 335000 else CRIT
+bud_col = GOOD if budget <= B1 else WARN if budget <= B2 else SER if budget <= B3 else CRIT
 mar_col = "var(--fg)" if ratio is None else GOOD if ratio <= 1 else "#c98500" if ratio <= 1.15 else CRIT
 sec = lambda n, titre, corps, cls="": f'<section class="panel {cls}"><h2><span class="num">{n}</span>{titre}</h2>{corps}</section>'
 
@@ -292,7 +301,7 @@ details{{margin-top:10px}}summary{{cursor:pointer;font-weight:700}}ul{{margin:8p
 @media (max-width:760px){{.hero,.g2{{grid-template-columns:1fr}}.kpis{{grid-template-columns:1fr 1fr}}.fr{{grid-template-columns:110px 1fr 56px 28px}}}}
 </style></head><body><main>
 <h1>{E(D.get('titre',''))}</h1><small>{E(D.get('adresse',''))} · {E(D.get('date',''))}</small>
-<section class="panel"><div class="hero"><div>{jauge(note, coul)}</div><div><span class="badge" style="background:{coul}">{ico} {lib}</span>{f' <span class="tag">note calculée sur {couverture} % des critères' + (f' — verdict à partir de {SEUIL_VERDICT} %' if provisoire else '') + '</span>' if couverture < 100 else ''}<p class="syn">{E(D.get('synthese',''))}</p></div></div>
+<section class="panel"><div class="hero"><div>{jauge(note, coul)}</div><div><span class="badge" style="background:{coul}">{ico} {lib}</span>{(f' <span class="tag">{note}/100 sur les seuls {couverture} % de critères connus — verdict à partir de {SEUIL_VERDICT} %</span>' if provisoire else f' <span class="tag">note calculée sur {couverture} % des critères</span>') if couverture < 100 else ''}<p class="syn">{E(D.get('synthese',''))}</p></div></div>
 <div class="kpis">{kpi('Prix', eur(prix)+' €', f'{eur(pm2)} €/m²' if pm2 else 'surface inconnue')}{kpi('Budget total', eur(budget)+' €', 'prix + travaux', bud_col)}{kpi('Coût mensuel', eur(cout_an/12)+' €' if C else '?', 'hors crédit')}{kpi('vs marché', f'{(ratio-1)*100:+.0f} %' if ratio else '—', f'médiane {eur(med)} €/m²' if med else 'moins de 3 comparables', mar_col)}</div></section>
 {sec(1, "Points d'attention", ff(D.get('points_attention', []), '!', SER), 'att')}
 {sec(2, "Forces et faiblesses", f'<div class="g2"><div><h3>Forces</h3>{ff(D.get("forces", []), "✓", GOOD)}</div><div><h3>Faiblesses</h3>{ff(D.get("faiblesses", []), "✗", CRIT)}</div></div>')}

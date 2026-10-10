@@ -6,9 +6,22 @@ Outils personnels d'analyse d'annonces immobilières en Saône-et-Loire (71) : r
 
 | Composant | Rôle | État |
 |---|---|---|
-| **Extension Radar Maison** (Firefox, Manifest v2) | Panneau sur les annonces Leboncoin et SeLoger : adresse par le DPE, comparables DVF. Blocs Géorisques et PLU encore vides. | v1.14+, code pas encore dans ce dépôt |
+| **Extension Radar Maison** (`extension/`, Chrome MV3 et Firefox MV2) | Panneau sur les annonces Leboncoin, SeLoger, sites d'agence : adresse par le DPE, comparables DVF. Blocs Géorisques et PLU encore vides. | v1.15 |
 | **Veille** | Agrège les alertes e-mail des portails (PHP + MySQL, OVH). | En construction |
 | **`analyse/`** (ce dépôt) | Scripts de collecte, de risques et de rapport. Utilisés par la skill Claude « analyse-maison » ; réutilisables par l'extension. | Fonctionnel, testé sur 3 biens le 10/10/2026 |
+
+## L'extension `extension/`
+
+Un seul `content.js` pour les deux navigateurs ; seuls le manifest et le script de fond diffèrent (`chrome/`, `firefox/`).
+
+```bash
+python3 extension/assembler.py     # → dist/radar-maison-chrome/ et dist/radar-maison-firefox/ (+ .zip)
+```
+
+- **Chrome** : `chrome://extensions` → mode développeur → « Charger l'extension non empaquetée » → `dist/radar-maison-chrome`. Pas à pas complet : `extension/chrome/INSTALLER-CHROME.txt`.
+- **Firefox** : `about:debugging#/runtime/this-firefox` → « Charger un module complémentaire temporaire » → `dist/radar-maison-firefox/manifest.json`.
+
+Le design turquoise / Montserrat d'août 2026 n'est **pas** dans ce code : la version la plus récente retrouvée (zip Chrome du 09/10/2026) a encore le style « plan » d'origine.
 
 ## Les scripts `analyse/`
 
@@ -31,12 +44,16 @@ eval(await (await fetch('https://raw.githubusercontent.com/josedigital23/Radar-m
 ```
 
 ```bash
-python3 analyse/rapport.py data.json rapport.html
+python3 analyse/rapport.py data.json rapport.html                  # critères de Victorien (analyse/profil.json)
+python3 analyse/rapport.py data.json rapport.html profil-autre.json # critères de quelqu'un d'autre
+python3 -m unittest discover tests                                  # 5 tests, sans dépendance
 ```
+
+`profil.json` porte ce qui est personnel : budget (confortable / acceptable / plafond), surface et chambres minimales, seuil de verdict.
 
 ### Règles de notation
 - **Rien d'incertain n'est noté.** Une donnée inconnue ou contradictoire vaut `null` : le critère s'affiche « à déterminer », la note globale est calculée sur les critères connus (la part notée est affichée), et le doute devient une question pour la visite.
-- **Pas de verdict sous 60 % de critères notés.** La note reste visible, en gris, avec la mention « Note provisoire — données insuffisantes ». Sans ce seuil, un prix seul donnait 100/100 « Très bonne affaire ».
+- **Pas de verdict sous 60 % de critères notés** (réglable dans le profil). La jauge affiche « ? provisoire » et le chiffre partiel passe dans l'étiquette. Sans ce seuil, un prix seul donnait 100/100 « Très bonne affaire ».
 - **Une valeur inconnue s'affiche « ? »**, jamais ✗, « Non » ou 0 : un garage inconnu n'est pas un garage absent.
 - Une dépense supposée (`"certain": false`) est affichée mais **hors budget**. Un coût non sourcé va dans `couts_indicatifs`, hors note.
 - Les risques et nuisances ne changent pas la note : ils sont listés comme points d'attention, avec distance et source.
@@ -63,10 +80,14 @@ Pièges connus :
 - La photo aérienne avec le cadastre doit être demandée en **PNG** (le JPEG est refusé).
 - La recherche ponctuelle (GetFeatureInfo) du BRGM sur les argiles renvoie « aucun résultat » même en zone forte : utiliser le WFS, comme `risques.js`.
 - Le lieu-dit d'une annonce est rarement dans la base d'adresses : passer par le DPE.
+- **Ancienne base DPE (`dpe-france`)** : `code_insee_commune_actualise` contient tantôt l'INSEE, tantôt le **code postal** (Paray : 311 DPE sous 71342, 72 sous 71600). Et `geo_adresse` n'accepte que l'adresse **entière et exacte** : `geo_adresse:"14 Rue Parmentier"` → 0, `"14 Rue Parmentier"` en texte libre → 2. Syntaxe qui marche : `code_insee_commune_actualise:(71342 OR 71600) AND "14 Rue Parmentier"` ; la forme `(champ:A OR champ:B) AND "…"` fait ignorer toute la requête (10,7 millions de résultats).
+- **Communes nouvelles** : les sections DVF se construisent avec `com_abs` + section (`000` + `0A`), pas en complétant par des zéros.
+
+Le cadre du projet et le journal des décisions sont dans [`docs/PROJET_REGLES_DU_JEU.md`](docs/PROJET_REGLES_DU_JEU.md).
 
 ## Prochaines étapes
 
-1. **Mettre le code de l'extension dans ce dépôt** (dossier `extension/`), tel quel.
+1. ~~Mettre le code de l'extension dans ce dépôt~~ → fait le 10/10/2026 (v1.15).
 2. **Brancher les scripts sur l'écran 2 de l'extension** : remplir les blocs Géorisques et PLU, puis ajouter trajets, historique DPE et permis. Spécification et maquette d'abord, puis feu vert, puis code.
 3. **Traduire `rapport.py` en JavaScript** pour que l'extension produise le rapport sans Claude (usage par la compagne, sans compte).
 4. **Questions pour la visite générées par règles**, sans IA : radon catégorie 3, bâtiment agricole à moins de 100 m, surface du DPE qui augmente sans autorisation, annonce contradictoire, nappe et caves, argiles et fissures…
