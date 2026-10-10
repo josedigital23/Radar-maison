@@ -32,7 +32,7 @@ travaux = sum((x.get("min", 0) + x.get("max", 0)) / 2 for x in DEP_OK)
 prix = D["prix"]; budget = prix + travaux
 s_budget = palier(budget, [(250000, 1), (300000, .6), (335000, .25)])
 surf, ch = D.get("surface"), D.get("chambres")
-s_taille = None if surf is None else 1 if (surf >= 125 and (ch or 3) >= 3) else (.6 if (ch or 0) >= 3 else .1) if surf >= 100 else 0
+s_taille = None if (surf is None or ch is None) else 1 if (surf >= 125 and ch >= 3) else (.6 if ch >= 3 else .1) if surf >= 100 else 0  # chambres inconnues = à déterminer
 s_style = {"pierre_charme": 1, "neuf_recent": .6, "autre": .5, "sous_sol_70_80": .15}.get(D.get("style"))
 s_maison = None if (s_taille is None or s_style is None) else .6 * s_taille + .4 * s_style
 comps = D.get("dvf", {}).get("comparables", [])
