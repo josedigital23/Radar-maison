@@ -154,6 +154,9 @@
     const elev = ic.find(i => i.tags.includes('elevage'));
     if (elev && elev.d < 1000) carte('elevage', elev.d < 500 ? 3 : 2, 'Élevage classé', `${elev.tags.includes('porcs') ? 'porcs · ' : elev.tags.includes('volailles') ? 'volailles · ' : ''}à ${m(elev.d)}`, 'Géorisques',
       { q: [Q('sur place', 'Odeurs, mouches, épandages ?', `élevage à ${m(elev.d)}`)] });
+    const agriIc = ic.find(i => i.tags.includes('agricole') && i.d < 1000);
+    if (agriIc && !(elev && elev.d < 1000)) carte('elevage', agriIc.d < 500 ? 2 : 1, 'Exploitation agricole classée', `${agriIc.nom} à ${m(agriIc.d)} · élevage probable`, 'Géorisques',
+      { deduction: true, q: [Q('sur place', 'Odeurs, épandages, passages d’engins ?', `exploitation à ${m(agriIc.d)}`)] });
     const meth = ic.find(i => i.tags.includes('methanisation') && i.d < 1000);
     if (meth) carte('methanisation', 2, 'Méthaniseur', `à ${m(meth.d)}`, 'Géorisques', { q: [Q('sur place', 'Odeurs, passages de camions ?', `méthaniseur à ${m(meth.d)}`)] });
     const carr = ic.find(i => i.tags.includes('carriere') && i.d < 2000);
@@ -183,6 +186,9 @@
           { q: [Q('mairie', 'Une annexe (garage, atelier) est-elle possible ?', `zone ${z.libelle}`)] });
       }
     } else if (zones && !zones.length) questionsLibres.push(Q('mairie', 'Quel document d’urbanisme s’applique ?', 'pas de PLU numérisé'));
+    // Un PPR inondation à moins de 600 m, sans que le bien soit dedans (Digoin, la Loire) : à savoir, pas à craindre
+    if (!(K.ppr_inondation > 0) && (c.servitudes || []).some(s => /^PM1/i.test(s.code) && /inond|PPRI/i.test(s.nom)))
+      carte('inondation', 1, 'Zone inondable réglementée à proximité', 'PPR inondation à moins de 600 m · le bien est hors périmètre', 'servitudes');
     const ac1 = (c.servitudes || []).find(s => /^AC1/i.test(s.code));
     if (ac1) carte('abf', 2, 'Abords d’un monument historique', 'Travaux extérieurs soumis à l’architecte des Bâtiments de France', 'servitudes',
       { q: [Q('mairie', 'Contraintes ABF pour menuiseries, toiture, panneaux solaires ?', 'monument historique')] });

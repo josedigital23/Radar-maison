@@ -16,7 +16,20 @@
   M.collecter = async function (P, io, onPartie, options) {
     const opt = options || {};
     const veut = nom => !opt.parties || opt.parties.includes(nom);
-    const j = async u => { try { const r = await io.json(u); return r == null ? { err: 'vide' } : r; } catch (e) { return { err: String(e) }; } };
+    /* Trop d'appels simultanés au même site et il refuse (constaté sur l'IGN : tous les trajets vides en collecte
+       complète, tous bons en collecte seule). Donc : 3 appels à la fois par site, et une seconde tentative. */
+    const files = {};
+    const tour = (hote) => { const f = files[hote] = files[hote] || { n: 0, q: [] };
+      return new Promise(ok => { const go = () => { f.n++; ok(() => { f.n--; const s = f.q.shift(); if (s) s(); }); }; f.n < 3 ? go() : f.q.push(go); }); };
+    const viaFile = async (u, fn) => { let h = 'x'; try { h = new URL(u).host; } catch (e) {}
+      for (let essai = 0; essai < 2; essai++) {
+        const libere = await tour(h);
+        let r; try { r = await fn(u); } catch (e) { r = { err: String(e) }; } finally { libere(); }
+        if (!(r && r.err) || essai === 1) return r;
+        await new Promise(ok => setTimeout(ok, 700));
+      } };
+    const j = async u => { const r = await viaFile(u, x => io.json(x)); return r == null ? { err: 'vide' } : r; };
+    const txt = async u => { const r = await viaFile(u, async x => { const t = await io.texte(x); return t == null ? { err: 'vide' } : { t }; }); return r && r.t != null ? r.t : null; };
     const enc = encodeURIComponent;
     const kx = 111320 * Math.cos(P.lat * Math.PI / 180), ky = 111320, H = [P.lon, P.lat];
     const dist = (a, b) => Math.round(Math.hypot((a[0] - b[0]) * kx, (a[1] - b[1]) * ky));
@@ -34,7 +47,8 @@
     const wfs = (t, R) => j(`https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=BDTOPO_V3:${t}&outputFormat=application/json&BBOX=${bbox(R)}&count=3000`);
     const route = async to => {
       const r = await j(`https://data.geopf.fr/navigation/itineraire?resource=bdtopo-osrm&start=${P.lon},${P.lat}&end=${to[0]},${to[1]}&profile=car&optimization=fastest&getSteps=false&getBbox=false&distanceUnit=kilometer&timeUnit=minute&geometryFormat=polyline`);
-      return (r.err || r.duration == null) ? null : { min: Math.round(r.duration), km: +(+r.distance).toFixed(1) };
+      if (r.err || r.duration == null) { O.erreurs.push('itinéraire : ' + (r.err || 'sans durée')); return null; }
+      return { min: Math.round(r.duration), km: +(+r.distance).toFixed(1) };
     };
     const best = async (list, n = 3) => {
       const c = list.map(x => ({ ...x, d: dist(x.c, H) })).sort((a, b) => a.d - b.d).slice(0, n);
@@ -51,7 +65,17 @@
     /* ---------- 1. Parcelle, puis le bâti (qui en a besoin) ---------- */
     const pParcelle = (async () => {
       const pa = await j('https://apicarto.ign.fr/api/cadastre/parcelle?geom=' + pt); echec('parcelle', pa);
-      const parc = pa.features && pa.features[0];
+      let parc = pa.features && pa.features[0];
+      /* Le point d'adresse tombe souvent sur la route, hors de toute parcelle (Digoin, 10/10/2026).
+         On prend alors la parcelle qui porte la maison la plus proche du point, à moins de 40 m. */
+      if (!parc && !pa.err) {
+        const R = 40, box = enc(JSON.stringify({ type: 'Polygon', coordinates: [[[P.lon - R / kx, P.lat - R / ky], [P.lon + R / kx, P.lat - R / ky], [P.lon + R / kx, P.lat + R / ky], [P.lon - R / kx, P.lat + R / ky], [P.lon - R / kx, P.lat - R / ky]]] }));
+        const [pb, bt] = await Promise.all([j('https://apicarto.ign.fr/api/cadastre/parcelle?geom=' + box), wfs('batiment', R)]);
+        const maisons = (bt.features || []).filter(f => f.properties.usage_1 === 'Résidentiel')
+          .map(f => ({ f, d: Math.min(...verts(f.geometry).map(c => dist(c, H))) })).sort((a, b) => a.d - b.d);
+        if (maisons.length) parc = (pb.features || []).find(p => inPoly(first(maisons[0].f.geometry), p.geometry)) || null;
+        if (parc) O.parcelle_deduite = true;
+      }
       O.parcelle = parc ? { section: parc.properties.section, numero: parc.properties.numero, idu: parc.properties.idu,
         contenance: +parc.properties.contenance || null } : null;
       fin('parcelle');
@@ -183,10 +207,10 @@
       const parc = await pParcelle;
       const an = new Date().getFullYear(), dept = P.insee.slice(0, 2);
       const annees = [an - 1, an - 2, an - 3, an - 4, an - 5];
-      const txt = await Promise.all(annees.map(a => io.texte(`https://files.data.gouv.fr/geo-dvf/latest/csv/${a}/communes/${dept}/${P.insee}.csv`).catch(() => null)));
-      const lus = txt.filter(Boolean).length;
+      const csvs = await Promise.all(annees.map(a => txt(`https://files.data.gouv.fr/geo-dvf/latest/csv/${a}/communes/${dept}/${P.insee}.csv`)));
+      const lus = csvs.filter(Boolean).length;
       const muts = new Map();
-      txt.forEach(t => {
+      csvs.forEach(t => {
         if (!t) return;
         const li = t.replace(/\r/g, '').split('\n').filter(l => l.trim());
         const cols = li[0].split(',');
@@ -261,14 +285,19 @@
         j(`${B}installations_classees?latlon=${ll}&rayon=5000&page_size=100`), j(`${B}ssp/casias?latlon=${ll}&rayon=2000&page_size=50`),
         j(`${B}cavites?latlon=${ll}&rayon=1000`), j(`${B}mvt?latlon=${ll}&rayon=1000`)]);
       const G = O.georisques = { joignable: !(cat.err && rga.err && rad.err) };
-      G.catnat = cat.err ? null : (cat.data || []).map(c => ({ date: c.date_debut_evt, libelle: c.libelle_risque_jo || '' }));
+      const iso = d => { const m = String(d || '').match(/^(\d{2})\/(\d{2})\/(\d{4})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : (d || null); };   // l'API rend JJ/MM/AAAA
+      G.catnat = cat.err ? null : (cat.data || []).map(c => ({ date: iso(c.date_debut_evt), libelle: c.libelle_risque_jo || '' })).sort((a, b) => String(a.date).localeCompare(String(b.date)));
       G.argiles = rga.err ? null : (rga.exposition || null);
       G.radon = rad.err ? null : (((rad.data || [])[0] || {}).classe_potentiel || null);
       const tags = i => { const r = (i.rubriques || []).map(x => String(x.numeroRubrique || '')); const t = [];
         if (i.bovins || i.porcs || i.volailles || r.some(x => /^(2101|2102|2111|3660)/.test(x))) t.push('elevage');
         if (i.porcs) t.push('porcs'); if (i.volailles) t.push('volailles');
         if (r.some(x => /^2781/.test(x))) t.push('methanisation'); if (r.some(x => /^2510/.test(x))) t.push('carriere');
-        if (/seuil/i.test(i.statutSeveso || '')) t.push('seveso'); return t; };
+        if (/seuil/i.test(i.statutSeveso || '')) t.push('seveso');
+        /* Les exploitations agricoles classées arrivent souvent sans rubrique ni drapeau d'espèce (Digoin : GAEC, EARL).
+           Une ICPE agricole est le plus souvent un élevage, mais ce n'est pas écrit : tag « agricole », pas « elevage ». */
+        if (!t.includes('elevage') && (/^01/.test(String(i.codeNaf || '')) || /\b(GAEC|EARL|SCEA)\b|[ée]levage|ferme/i.test(i.raisonSociale || ''))) t.push('agricole');
+        return t; };
       G.icpe = ic.err ? null : (ic.data || []).map(i => ({ nom: i.raisonSociale, d: dist([+i.longitude, +i.latitude], H), tags: tags(i) })).sort((a, b) => a.d - b.d);
       G.casias = cs.err ? null : (cs.data || []).map(c => ({ nom: c.nom_etablissement || '', d: c.geom ? dist(c.geom.coordinates, H) : null })).sort((a, b) => (a.d ?? 1e9) - (b.d ?? 1e9));
       G.cavites_1km = cav.err ? null : (cav.data || []).length;
@@ -280,9 +309,9 @@
       const lat = P.lat, lon = P.lon;
       const Bw = 'https://mapsref.brgm.fr/wxs/georisques/risques?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=ms:';
       const box = R => `${lat - R / 111320},${lon - R / kx},${lat + R / 111320},${lon + R / kx},urn:ogc:def:crs:EPSG::4326`;
-      const gj = async (tn, R) => { try { const r = await io.json(`${Bw}${tn}&BBOX=${box(R)}&COUNT=50&OUTPUTFORMAT=geojson`); return r && !r.err ? (r.features || []) : null; } catch (e) { return null; } };
-      const hits = async (tn, R) => { try { const t = await io.texte(`${Bw}${tn}&BBOX=${box(R)}&RESULTTYPE=hits`); const m = (t || '').match(/numberMatched="(\d+)"/); return m ? +m[1] : null; } catch (e) { return null; } };
-      const gml = async (tn, R) => { try { const t = await io.texte(`${Bw}${tn}&BBOX=${box(R)}`); return t == null ? null : t.split(`<ms:${tn}`).slice(1); } catch (e) { return null; } };
+      const gj = async (tn, R) => { try { const r = await j(`${Bw}${tn}&BBOX=${box(R)}&COUNT=50&OUTPUTFORMAT=geojson`); return r && !r.err ? (r.features || []) : null; } catch (e) { return null; } };
+      const hits = async (tn, R) => { try { const t = await txt(`${Bw}${tn}&BBOX=${box(R)}&RESULTTYPE=hits`); const m = (t || '').match(/numberMatched="(\d+)"/); return m ? +m[1] : null; } catch (e) { return null; } };
+      const gml = async (tn, R) => { try { const t = await txt(`${Bw}${tn}&BBOX=${box(R)}`); return t == null ? null : t.split(`<ms:${tn}`).slice(1); } catch (e) { return null; } };
       const dgml = s => { const p = ((s.match(/<gml:pos>([^<]+)</) || [])[1] || '').split(' ').map(Number); return p.length === 2 ? Math.round(Math.hypot((p[1] - lon) * kx, (p[0] - lat) * 111320)) : null; };
       const [rga, nap, eaip, ppr, cav, mvt, ssp, sis] = await Promise.all([gj('ALEARG_REALISE', 15), gj('REMNAPPE_FIAB', 15), hits('EAIP_CE_GE', 15), hits('PPRN_PERIMETRE_INOND', 15),
         gml('CAVITE_LOCALISEE', 1000), gml('MVT_LOCALISE', 1000), hits('SSP_INSTR_GE_POINT', 2000), hits('SSP_CLASSIF_SIS_GE', 2000)]);
