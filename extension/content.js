@@ -554,7 +554,7 @@
             <button data-v="verrouillé">Dans la ville</button><button data-v="centre">Autour</button><button data-v="exclu">Autour, pas dedans</button>
           </div><input type="hidden" id="geoMode" value="centre"></div>
         <div><span class="etiq">Rayon</span>
-          <div class="chips" id="chips-rayon">
+          <div class="chips rayons" id="chips-rayon">
             <button class="chip" data-v="5">5 km</button><button class="chip" data-v="10">10 km</button><button class="chip on" data-v="15">15 km</button><button class="chip" data-v="25">25 km</button><button class="chip" data-v="40">40 km</button><button class="chip" data-v="999">Dépt</button>
           </div><input type="hidden" id="rayon" value="15"></div>
         <button class="bouton contour" id="plus"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9 V4 H9 M20 9 V4 H15 M4 15 V20 H9 M20 15 V20 H15"></path></svg>Élargir les critères</button>
@@ -736,8 +736,11 @@
     const alertes = () => {
       if(!compte) return "";
       const national = (mode === "conso");
-      const trou = (compte.national && !national && compte.national.total > compte.national.recus)
-                || ["local","boite","vieux"].some(k => compte[k] && !compte[k].erreur && compte[k].total > compte[k].recus);
+      /* Une requête coupée ne compte que si elle couvre le rayon demandé : quand la recherche par cadre a répondu
+         en entier, la départementale tronquée ne cache rien d'utile (Digoin, 10/10/2026 : alerte à tort). */
+      const coupe = k => compte[k] && !compte[k].erreur && compte[k].total > compte[k].recus;
+      const cadreOk = compte.boite && !compte.boite.erreur;
+      const trou = cadreOk ? (coupe("boite") || coupe("vieux")) : ((coupe("national") && !national) || coupe("local") || coupe("vieux"));
       const bboxKo = compte.boite && compte.boite.erreur;
       const detail = [["national", national ? "France" : "Département"], ["local", "Département"], ["boite", `Cadre ${compte.rayon} km`], ["vieux", "Avant 2021"]]
         .filter(([k]) => compte[k]).map(([k, n]) => `${n} : ${compte[k].erreur ? "échec" : compte[k].recus + "/" + compte[k].total}`).join(" · ")
@@ -899,9 +902,10 @@
     const dans = cands.filter(x => x.d==null || x.d<=rayon);
     const hors = cands.filter(x => x.d!=null && x.d>rayon);
 
-    /* Le score traduit en mots (10/10/2026) : Très probable = même jour de visite, ou score ≥ 110 ;
-       Probable ≥ 80 ; Possible ≥ 55 ; en dessous, Peu probable. Deux premiers à moins de 10 points : « à départager ». */
-    const proba = x => (x.indices.includes("MÊME JOUR DE VISITE") || x.s >= 110) ? ["Très probable", "p-tres"]
+    /* Le score traduit en mots (10/10/2026) : Très probable = même jour de visite ET score ≥ 90, ou score ≥ 110 ;
+       Probable ≥ 80 ; Possible ≥ 55 ; en dessous, Peu probable. Deux premiers à moins de 10 points : « à départager ».
+       Calibrage Digoin : deux maisons visitées le même jour (98 et 79) — la date seule ne suffit pas à dire « très probable ». */
+    const proba = x => ((x.indices.includes("MÊME JOUR DE VISITE") && x.s >= 90) || x.s >= 110) ? ["Très probable", "p-tres"]
       : x.s >= 80 ? ["Probable", "p-prob"] : x.s >= 55 ? ["Possible", "p-poss"] : ["Peu probable", "p-peu"];
     const serres = dans.length > 1 && dans[0].s - dans[1].s < 10;
     const esc = RadarUI.esc;

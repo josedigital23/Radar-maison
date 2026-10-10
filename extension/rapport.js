@@ -48,6 +48,7 @@
   .chip{height:36px;min-width:52px;padding:0 12px;border-radius:18px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid #D5E0EB;background:#fff;color:#14263A}
   .chip.on,.chip.actif{border-color:#0D2B4E;background:#0D2B4E;color:#fff}
   .chips.petites .chip{height:30px;min-width:0;font-size:12px}
+  .rayons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}.rayons .chip{min-width:0;padding:0 4px;font-size:12.5px}
   .bouton{width:100%;height:48px;border-radius:12px;border:0;background:#1D63ED;color:#fff;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
   .bouton:hover{background:#174FC0}
   .bouton.contour{background:#fff;color:#1D63ED;border:1.5px solid #1D63ED}
@@ -134,7 +135,7 @@
     const col = o.attente ? '#C9D5E1' : inconnu ? 'transparent' : COUL[niv];
     return `<svg width="${taille}" height="${taille}" viewBox="0 0 64 64" aria-hidden="true">
       <circle cx="32" cy="32" r="${r}" fill="none" stroke="${fond}" stroke-width="8" ${inconnu && !o.attente ? 'stroke-dasharray="4 4"' : ''}></circle>
-      ${inconnu || o.attente ? '' : `<circle cx="32" cy="32" r="${r}" fill="none" stroke="${col}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(C * v / 10).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 32 32)"></circle>`}
+      ${inconnu || o.attente || v <= 0 ? '' : `<circle cx="32" cy="32" r="${r}" fill="none" stroke="${col}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(C * v / 10).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 32 32)"></circle>`}
       <text x="32" y="37" text-anchor="middle" style="font:700 15px 'Radar Montserrat',Montserrat,'Segoe UI',sans-serif;fill:${texte}">${o.attente ? '…' : inconnu ? '?' : String(v.toFixed(1)).replace('.', ',')}</text></svg>`;
   };
   const SVG = {
@@ -309,7 +310,7 @@
             + choix('chambres', 'Chambres', D.chambres, [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5+']], 'annonce')
             + choix('style', 'Style', D.style, [['pierre_charme', 'Pierre, charme'], ['neuf_recent', 'Récent'], ['sous_sol_70_80', 'Sous-sol 70-80'], ['autre', 'Autre']], null)
             + choix('garage', 'Garage, abri', D.garage, OUI, 'annonce') + choix('atelier', 'Atelier', D.atelier, OUI, 'annonce')
-            + nombre('terrain', 'Terrain', D.terrain, 'm²', annonce.terrain ? 'annonce' : 'cadastre'); break;
+            + nombre('terrain', 'Terrain', D.terrain, 'm²', (annonce.terrain || (D.texte && D.texte.terrain)) ? 'annonce' : 'cadastre'); break;
         }
         case 'isolement': {
           const iso = c.isolement || {};

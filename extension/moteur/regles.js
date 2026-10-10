@@ -15,7 +15,7 @@
   const mois = (a, b) => { const x = new Date(a), y = new Date(b); return (y - x) / (30.44 * 86400000); };
   const m = n => n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' km' : Math.round(n) + ' m';
   const eur = n => Math.round(n).toLocaleString('fr-FR') + ' €';
-  const pct = x => (x > 0 ? '+' : '') + Math.round(x * 100) + ' %';
+  const pct = x => (x > 0 ? '+' : '') + Math.round(x * 100 + (x > 0 ? 1e-9 : -1e-9)) + ' %';   // 0,575 → +58 %, pas +57
   const annee = d => String(d || '').slice(0, 4);
 
   M.regles = function (c, D, R, annonce, aujourdhui) {
