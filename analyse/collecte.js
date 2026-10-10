@@ -107,7 +107,7 @@ for (const rid of ['65a9e264-7a20-46a9-9d98-66becb817bc3', '8f23d65f-7142-4ac5-9
     const r = await j(`https://tabular-api.data.gouv.fr/api/resources/${rid}/data/?COMM__exact=${P.insee}&page_size=50&page=${pg}`);
     for (const x of r.data || []) {
       const ref = `${x.SEC_CADASTRE1 || ''}${(x.NUM_CADASTRE1 || '').replace(/^0+/, '')}`.replace(/^0+/, '');
-      const memeRue = mot && norm(`${x.ADR_LIBVOIE_TER} ${x.ADR_LIEUDIT_TER}`).includes(mot);
+      const memeRue = mot && norm(`${x.ADR_LIBVOIE_TER} ${x.ADR_LIEUDIT_TER}`).includes(mot.slice(0, Math.max(5, mot.length - 1))); // tolère CHAMOGE/CHAMOGES
       const agri = String(x.DESTINATION_PRINCIPALE) === '7';
       if (!(memeRue || parcs.has(ref) || agri)) continue;
       const surf = [['hab.', x.SURF_HAB_CREEE], ['agri.', x.SURF_AGR_CREEE], ['locaux', x.SURF_LOC_CREEE]].filter(([, v]) => +v > 0).map(([k, v]) => `${v} m² ${k}`).join(', ');
