@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Radar Maison",
-  "version": "2.0",
+  "version": "2.1",
   "description": "Retrouve l'adresse exacte d'un bien immobilier à partir de son annonce, via la base DPE de l'ADEME.",
   "permissions": [
     "scripting",

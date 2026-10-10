@@ -214,7 +214,7 @@
       budget: () => `Budget ${eur(R.budget)}`, marche: () => `Prix ${pct(R.ratio - 1)} vs médiane`,
       maison: () => `${Math.round(D.surface)} m², ${D.chambres} chambres`, dependances: () => D.garage && D.atelier ? 'Garage et atelier' : D.garage || D.atelier ? (D.garage ? 'Garage, sans atelier' : 'Atelier, sans garage') : 'Ni garage ni atelier',
       terrain: () => `Terrain de ${Math.round(D.terrain).toLocaleString('fr-FR')} m²`, isolement: () => D.voisin_m != null ? `Premier voisin à ${m(D.voisin_m)}` : 'Isolement',
-      couts: () => `Coût estimé ${eur(R.mois)}/mois${D.taxe_fonciere_an ? '' : ' (énergie)'}`, connexion: () => ({ fibre: 'Fibre', fibre_prevue: 'Fibre prévue', '4g_bonne': '4G seulement', rien: 'Pas de bonne connexion' })[D.connexion]
+      couts: () => D.taxe_fonciere_an ? `Coûts : ${eur(R.mois)}/mois` : `Énergie : ${eur(R.mois)}/mois`, connexion: () => ({ fibre: 'Fibre', fibre_prevue: 'Fibre prévue', '4g_bonne': '4G seulement', rien: 'Pas de bonne connexion' })[D.connexion]
     };
     R.criteres.forEach(x => {
       if (x.s == null) return;

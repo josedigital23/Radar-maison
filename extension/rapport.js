@@ -320,7 +320,10 @@
         }
         case 'couts': {
           const tf = c.taxe_fonciere;
-          corps = nombre('energie_an', 'Énergie', D.energie_an, '€/an', 'DPE')
+          const E = D.energie;
+          corps = nombre('energie_an', 'Énergie, aux prix d’aujourd’hui', D.energie_an, '€/an', E ? 'DPE · prix ' + M.PRIX_ENERGIE.releve : 'DPE')
+            + (E ? lignes([...E.lignes.map(l => [l.type + (l.kwh ? ` · ${nbf(l.kwh)} kWh` : ''), eur(l.cout) + (l.actualise ? '' : ' · prix 2021')]),
+                E.an2021 != null && ['Facture affichée par le DPE (prix 2021)', eur(E.an2021)]]) : '')
             + nombre('taxe_fonciere_an', 'Taxe foncière', D.taxe_fonciere_an, '€/an', null)
             + lignes([tf && ['Taux de la commune', `${String(tf.taux_tfb).replace('.', ',')} % (${tf.exercice})`], ['Par mois', R.mois != null ? eur(R.mois) : '?']]); break;
         }

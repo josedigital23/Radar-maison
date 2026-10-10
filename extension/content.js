@@ -208,21 +208,28 @@
     return out;
   }
 
+  /* Les prix que la page déclare pour les machines : JSON-LD (offers.price) et balises meta.
+     Plus sûrs que le texte, mais une page peut aussi y lister des biens similaires : ils ne font que départager. */
+  function prixStructures(){
+    const o = [];
+    const fouiller = x => {
+      if(!x || typeof x !== "object") return;
+      if(Array.isArray(x)){ x.forEach(fouiller); return; }
+      if(x.price != null && (!x.priceCurrency || /EUR/i.test(x.priceCurrency))) o.push(parseFloat(String(x.price).replace(/[^\d.]/g, "")));
+      Object.values(x).forEach(v => { if(v && typeof v === "object") fouiller(v); });
+    };
+    document.querySelectorAll('script[type="application/ld+json"]').forEach(s => { try { fouiller(JSON.parse(s.textContent)); } catch(e){} });
+    document.querySelectorAll('meta[itemprop="price"], meta[property="product:price:amount"], meta[property="og:price:amount"]').forEach(m => o.push(parseFloat(m.content)));
+    return o.filter(v => !isNaN(v));
+  }
+
   /* ---------- lecture du texte visible de la page ---------- */
   function lire(){
     const t = texteAnnonce();
     const d = { lieux:[] };
 
-    // Le prix demandé : le premier gros montant en euros de la page (les annonces l'affichent en tête).
-    // On écarte les €/m², les mensualités de prêt et les frais de notaire.
-    const rp = /([0-9][0-9\s  ]{4,12})\s*€/g;
-    let p;
-    while((p = rp.exec(t)) !== null){
-      const apres = t.slice(p.index + p[0].length, p.index + p[0].length + 20);
-      if(/\s*(?:\/|par)\s*(?:mois|m|mètre)/i.test(apres)) continue;
-      const val = nb(p[1]);
-      if(val >= 15000 && val <= 5000000){ d.prix = val; break; }
-    }
+    // Le prix demandé : voir RadarMoteur.choisirPrix (le premier montant venu était parfois le prix hors honoraires).
+    d.prix = RadarMoteur.choisirPrix(t, prixStructures());
 
     d.surfaces = surfaces(t);
     if(d.surfaces.length) d.surface = d.surfaces[0];

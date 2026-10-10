@@ -149,3 +149,26 @@ test('DVF : lecture des CSV, une maison par vente, filtres de prix, vente du bie
   assert.strictEqual(c.dvf.comparables.length, 4);
   assert.deepStrictEqual(c.dvf.ventes_du_bien, [{ date: '2024-09-01', valeur: 120000 }]);
 });
+
+test('Énergie : facture recalculée aux prix d’octobre 2026, le bois gardé aux prix 2021 (Digoin réel)', () => {
+  // kWh et coûts 2021 du DPE réel de Digoin (2671E0233480Y), lus le 10/10/2026
+  const dpe = { type_energie_principale_chauffage: 'Gaz naturel', cout_total_5_usages: 2817.4,
+    type_energie_n1: 'Gaz naturel', conso_5_usages_ef_energie_n1: 22297.9, cout_total_5_usages_energie_n1: 2297.6,
+    type_energie_n2: 'Bois – Bûches', conso_5_usages_ef_energie_n2: 8929.9, cout_total_5_usages_energie_n2: 375.1,
+    type_energie_n3: 'Électricité', conso_5_usages_ef_energie_n3: 416.7, cout_total_5_usages_energie_n3: 144.7 };
+  const E = M.energieActuelle(dpe);
+  // gaz 22 297,9 × 0,1456 + 360,8 = 3 607 ; bois 375 (2021) ; élec 416,7 × 0,2001 + 190,35 = 274
+  assert.strictEqual(E.an, 4256);
+  assert.strictEqual(E.an2021, 2817);
+  assert.strictEqual(E.nonActualise, 375);
+  const R = M.noter(M.construireDossier({ dpe }, { prix: 189000 }));
+  assert.strictEqual(R.groupes.find(g => g.id === 'couts').nom, 'Énergie', 'sans taxe foncière, l’anneau s’appelle Énergie');
+});
+
+test('Prix : le montant hors honoraires ne passe plus devant le prix (SeLoger réel, 252 000 € / 201 600 €)', () => {
+  const t = 'Honoraires : 25 % TTC à la charge de l’acquéreur, soit 201 600 € hors honoraires.\nMaison à vendre\n252 000 €\n1 313 €/m²\nÀ partir de 1 309 €/mois\n8 pièces • 3 chambres • 192 m² • 2 800 m² de terrain\nPrix : 252 000 €';
+  assert.strictEqual(M.choisirPrix(t, []), 252000);
+  assert.strictEqual(M.choisirPrix('201 600 € net vendeur · 252 000 €', []), 252000);
+  assert.strictEqual(M.choisirPrix('Prix 252 000 €', [252000, 189000]), 252000);
+  assert.strictEqual(M.choisirPrix('Mensualité 1 309 €/mois · 252.000 €', []), 252000);
+});

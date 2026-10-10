@@ -17,6 +17,73 @@
     projet_location: false
   };
 
+  /* ---------- la facture d'énergie, aux prix d'aujourd'hui ----------
+     Le DPE chiffre la facture aux prix du 1er janvier 2021 (« prix moyens des énergies indexés sur 01/01/2021 »,
+     écrit sur les annonces). Il donne aussi les kWh consommés par énergie : on les multiplie par les prix actuels.
+     Prix relevés le 10/10/2026 :
+     - électricité, tarif bleu Base au 1er août 2026 : 0,2001 €/kWh et 190,35 €/an en 6 kVA ; 0,1985 €/kWh et 238,60 €/an
+       en 9 kVA (Selectra, d'après la délibération CRE du 15/07/2026) ;
+     - gaz, prix repère CRE d'octobre 2026, profil chauffage : 0,1456 €/kWh et 360,8 €/an (Hellowatt, Kelwatt,
+       fournisseurs-electricite.com, concordants) ;
+     - fioul : 1 899 € les 1 000 L au 28/09/2026 (Fioulmarket), à ~10 kWh par litre → 0,19 €/kWh ;
+     - granulés : 431 €/t en vrac au 25/09/2026 (Selectra, 130 villes), à ~4,6 kWh/kg → 0,094 €/kWh.
+     Bois bûche, GPL, réseau de chaleur, charbon : pas de prix actuel fiable → coût du DPE gardé, signalé « prix 2021 ». */
+  M.PRIX_ENERGIE = {
+    releve: 'octobre 2026',
+    elec6: { kwh: 0.2001, abo: 190.35 }, elec9: { kwh: 0.1985, abo: 238.60 },
+    gaz: { kwh: 0.1456, abo: 360.8 }, fioul: { kwh: 0.19 }, granules: { kwh: 0.094 }
+  };
+  M.energieActuelle = function (dpe) {
+    if (!dpe) return null;
+    const PE = M.PRIX_ENERGIE, lignes = [];
+    const elecChauffage = /électri/i.test(dpe.type_energie_principale_chauffage || '');
+    const tarifElec = elecChauffage ? PE.elec9 : PE.elec6;
+    let elecVue = false, total = 0, nonActualise = 0;
+    for (const n of [1, 2, 3]) {
+      const type = dpe['type_energie_n' + n], kwh = +dpe['conso_5_usages_ef_energie_n' + n] || 0, c21 = +dpe['cout_total_5_usages_energie_n' + n] || 0;
+      if (!type || (!kwh && !c21)) continue;
+      let c26 = null;
+      if (/électri/i.test(type)) { c26 = kwh * tarifElec.kwh + tarifElec.abo; elecVue = true; }
+      else if (/gaz naturel/i.test(type)) c26 = kwh * PE.gaz.kwh + PE.gaz.abo;
+      else if (/fioul/i.test(type)) c26 = kwh * PE.fioul.kwh;
+      else if (/granul|pellet/i.test(type)) c26 = kwh * PE.granules.kwh;
+      if (c26 == null) nonActualise += c21;
+      total += c26 != null ? c26 : c21;
+      lignes.push({ type, kwh: Math.round(kwh), cout2021: Math.round(c21), cout: Math.round(c26 != null ? c26 : c21), actualise: c26 != null });
+    }
+    if (!lignes.length) return null;
+    if (!elecVue) { total += tarifElec.abo; lignes.push({ type: 'Abonnement électricité', kwh: 0, cout2021: 0, cout: Math.round(tarifElec.abo), actualise: true }); }
+    return { an: Math.round(total), an2021: dpe.cout_total_5_usages != null ? Math.round(dpe.cout_total_5_usages) : null, lignes, nonActualise: Math.round(nonActualise), kva: elecChauffage ? 9 : 6 };
+  };
+
+  /* ---------- le prix demandé ----------
+     Premier test réel (SeLoger, 10/10/2026) : 201 600 € lus au lieu de 252 000 € — le prix hors honoraires
+     (252 000 / 1,25) arrivait avant dans le texte, et l'ancienne lecture prenait le premier montant venu.
+     Désormais : on écarte les montants « hors honoraires », « net vendeur », mensualités, €/m², frais ;
+     on préfère un montant aussi présent dans les données structurées de la page (JSON-LD, meta) ;
+     sinon le plus répété (le vrai prix est affiché plusieurs fois) ; à égalité, le premier. */
+  M.choisirPrix = function (texte, structures) {
+    const t = texteOu(texte), n = s => parseFloat(String(s).replace(/[\s\u202f\u00a0]/g, '').replace(',', '.'));
+    const re = /([0-9][0-9\s\u202f\u00a0.]{3,12})\s*(?:€|euros?\b)/gi, vus = new Map();
+    let m;
+    while ((m = re.exec(t)) !== null) {
+      const v = n(m[1].replace(/\.(?=\d{3}\b)/g, ''));
+      if (!(v >= 15000 && v <= 5000000)) continue;
+      const apres = t.slice(m.index + m[0].length, m.index + m[0].length + 40);
+      const avant = t.slice(Math.max(0, m.index - 60), m.index);
+      if (/^\s*(?:\/|par)\s*(?:mois|m|mètre)/i.test(apres)) continue;
+      if (/^\s*(?:hors\s+honoraires|h\.?\s?h\b|net\s+vendeur|hors\s+frais)/i.test(apres)) continue;
+      if (/(?:hors\s+honoraires|net\s+vendeur|soit|honoraires|frais\s+(?:de\s+)?notaire|frais\s+d['’]agence|mensualit|emprunt|apport|estim)[^€0-9·•|;,\n]{0,15}$/i.test(avant)) continue;   // le mot doit coller au montant, sans séparateur entre les deux
+      const x = vus.get(v) || { n: 0, i: m.index }; x.n++; vus.set(v, x);
+    }
+    const S = (structures || []).map(Number).filter(v => v >= 15000 && v <= 5000000);
+    const cands = [...vus.entries()].map(([v, x]) => ({ v, score: x.n + (S.includes(v) ? 3 : 0), i: x.i }));
+    S.forEach(v => { if (!vus.has(v)) cands.push({ v, score: 2, i: 1e9 }); });
+    cands.sort((a, b) => b.score - a.score || a.i - b.i);
+    return cands.length ? cands[0].v : null;
+  };
+  const texteOu = t => t || '';
+
   /* ---------- ce que dit le texte de l'annonce (jamais « non » par simple absence) ---------- */
   M.lireTexte = function (t) {
     t = t || '';
@@ -86,7 +153,8 @@
         supermarche: pick('min_supermarche', mn('supermarche')), depannage: pick('min_depannage', mn('depannage')),
         sport: pick('min_sport', mn('sport'), mn('autre_salle'))
       },
-      energie_an: pick('energie_an', dpe.cout_total_5_usages != null ? Math.round(dpe.cout_total_5_usages) : null),
+      energie_an: pick('energie_an', (M.energieActuelle(c.dpe) || {}).an ?? (dpe.cout_total_5_usages != null ? Math.round(dpe.cout_total_5_usages) : null)),
+      energie: M.energieActuelle(c.dpe),
       taxe_fonciere_an: pick('taxe_fonciere_an', null),
       comparables: (c.dvf && c.dvf.comparables) || [],
       texte: T
@@ -144,8 +212,11 @@
     const provisoire = couverture < (P.seuil_verdict_pct ?? 60);
     const verdict = provisoire || note == null ? null : note >= 75 ? 'Très bonne affaire' : note >= 60 ? 'Intéressante' : note >= 45 ? 'Moyenne' : 'À éviter';
 
+    // Sans taxe foncière, l'anneau ne mesure que l'énergie : il s'appelle « Énergie », pas « Coûts » (retour du 10/10/2026)
+    const nomCouts = D.taxe_fonciere_an ? 'Coûts' : 'Énergie';
+    C.find(x => x.id === 'couts').nom = D.taxe_fonciere_an ? 'Coûts mensuels' : 'Énergie';
     const GR = [['trajets', 'Trajets'], ['courses', 'Courses'], ['budget', 'Budget'], ['prix', 'Prix'],
-      ['maison', 'Maison'], ['isolement', 'Isolement'], ['couts', 'Coûts'], ['connexion', 'Connexion']];
+      ['maison', 'Maison'], ['isolement', 'Isolement'], ['couts', nomCouts], ['connexion', 'Connexion']];
     const groupes = GR.map(([id, nom]) => {
       const xs = C.filter(x => x.groupe === id), k = xs.filter(x => x.s != null);
       const w = k.reduce((a, x) => a + x.poids, 0);

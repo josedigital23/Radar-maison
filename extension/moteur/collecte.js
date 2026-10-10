@@ -101,7 +101,9 @@
       if (dp) {
         const k = ['numero_dpe', 'date_visite_diagnostiqueur', 'date_etablissement_dpe', 'adresse_ban', 'nom_rue_ban', 'code_postal_ban', 'etiquette_dpe', 'etiquette_ges',
           'surface_habitable_logement', 'periode_construction', 'annee_construction', 'type_energie_principale_chauffage', 'description_installation_chauffage_n1',
-          'conso_5_usages_par_m2_ep', 'cout_total_5_usages', 'qualite_isolation_murs', 'qualite_isolation_menuiseries', 'type_ventilation', 'indicateur_confort_ete'];
+          'conso_5_usages_par_m2_ep', 'cout_total_5_usages', 'qualite_isolation_murs',
+          'type_energie_n1', 'type_energie_n2', 'type_energie_n3', 'conso_5_usages_ef_energie_n1', 'conso_5_usages_ef_energie_n2', 'conso_5_usages_ef_energie_n3',
+          'cout_total_5_usages_energie_n1', 'cout_total_5_usages_energie_n2', 'cout_total_5_usages_energie_n3', 'qualite_isolation_menuiseries', 'type_ventilation', 'indicateur_confort_ete'];
         O.dpe = Object.fromEntries(k.filter(x => dp[x] != null).map(x => [x, dp[x]]));
       } else O.dpe = null;
       fin('dpe');

@@ -68,6 +68,8 @@ Changy, Saint-Aubin, Digoin, Vendenesse, Moroges, Paray, Épinac, Artaix (adress
 | Exploitations agricoles classées sans espèce (GAEC, EARL) | Tag « agricole », carte en déduction |
 | Deux maisons visitées le même jour (98 et 79) toutes deux « Très probable » | Même jour de visite **et** score d'au moins 90 |
 | Dates de catastrophe naturelle en JJ/MM/AAAA | Converties à la collecte |
+| Premier test réel (SeLoger) : 201 600 € lus au lieu de 252 000 € | Prix : on écarte « hors honoraires », « net vendeur », mensualités ; on préfère le montant répété et celui des données structurées de la page |
+| Anneau « Coûts » à 100 €/mois : c'était la facture d'énergie seule, aux prix de 2021 | L'anneau s'appelle « Énergie » tant que la taxe foncière n'est pas saisie ; la facture est recalculée aux prix d'octobre 2026 à partir des kWh du DPE (Digoin : 2 817 € au DPE → 4 256 € aujourd'hui) |
 
 Trouvailles réelles que les règles ont fait remonter : l'ancienne usine Eternit à 11 m (Paray), une décharge de pneus à 87 m (Artaix), une carrière à 839 m (Vendenesse), les abords d'un monument historique (Épinac), la surface gonflée de 53 % (Digoin).
 
