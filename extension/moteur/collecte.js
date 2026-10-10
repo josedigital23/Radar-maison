@@ -17,16 +17,17 @@
     const opt = options || {};
     const veut = nom => !opt.parties || opt.parties.includes(nom);
     /* Trop d'appels simultanés au même site et il refuse (constaté sur l'IGN : tous les trajets vides en collecte
-       complète, tous bons en collecte seule). Donc : 3 appels à la fois par site, et une seconde tentative. */
-    const files = {};
-    const tour = (hote) => { const f = files[hote] = files[hote] || { n: 0, q: [] };
-      return new Promise(ok => { const go = () => { f.n++; ok(() => { f.n--; const s = f.q.shift(); if (s) s(); }); }; f.n < 3 ? go() : f.q.push(go); }); };
+       complète, tous bons en collecte seule ; puis HTTP 429 sur l'itinéraire). Donc : un nombre d'appels simultanés
+       par site (2 pour l'IGN, 3 ailleurs), et jusqu'à 3 tentatives, en attendant plus longtemps après un 429. */
+    const files = {}, LIMITE = { 'data.geopf.fr': 2 };
+    const tour = (hote) => { const f = files[hote] = files[hote] || { n: 0, q: [] }, max = LIMITE[hote] || 3;
+      return new Promise(ok => { const go = () => { f.n++; ok(() => { f.n--; const s = f.q.shift(); if (s) s(); }); }; f.n < max ? go() : f.q.push(go); }); };
     const viaFile = async (u, fn) => { let h = 'x'; try { h = new URL(u).host; } catch (e) {}
-      for (let essai = 0; essai < 2; essai++) {
+      for (let essai = 0; essai < 3; essai++) {
         const libere = await tour(h);
         let r; try { r = await fn(u); } catch (e) { r = { err: String(e) }; } finally { libere(); }
-        if (!(r && r.err) || essai === 1) return r;
-        await new Promise(ok => setTimeout(ok, 700));
+        if (!(r && r.err) || essai === 2) return r;
+        await new Promise(ok => setTimeout(ok, /429/.test(r.err) ? 1500 * (essai + 1) : 600));
       } };
     const j = async u => { const r = await viaFile(u, x => io.json(x)); return r == null ? { err: 'vide' } : r; };
     const txt = async u => { const r = await viaFile(u, async x => { const t = await io.texte(x); return t == null ? { err: 'vide' } : { t }; }); return r && r.t != null ? r.t : null; };
@@ -50,7 +51,7 @@
       if (r.err || r.duration == null) { O.erreurs.push('itinéraire : ' + (r.err || 'sans durée')); return null; }
       return { min: Math.round(r.duration), km: +(+r.distance).toFixed(1) };
     };
-    const best = async (list, n = 3) => {
+    const best = async (list, n = 2) => {
       const c = list.map(x => ({ ...x, d: dist(x.c, H) })).sort((a, b) => a.d - b.d).slice(0, n);
       const rs = await Promise.all(c.map(x => route(x.c)));
       let b = null; rs.forEach((r, i) => { if (r && (!b || r.min < b.min)) b = { dest: c[i].nom, ...r }; });
@@ -160,14 +161,25 @@
       const [bt, cp, le, rt, vf] = await Promise.all([wfs('batiment', 1000), wfs('construction_ponctuelle', 5000), wfs('ligne_electrique', 1500), wfs('troncon_de_route', 600), wfs('troncon_de_voie_ferree', 1500)]);
       echec('bâti IGN', bt);
       const bats = bt.features || [];
-      const own = bats.filter(f => inPoly(first(f.geometry), parc && parc.geometry));
-      const refB = own.find(f => f.properties.usage_1 === 'Résidentiel') || own[0];
-      const H2 = refB ? first(refB.geometry) : H;   // distances mesurées depuis la maison, pas depuis le point d'adresse
-      const md = gm => Math.min(...verts(gm).map(c => dist(c, H2)));
-      const oth = bats.filter(f => !own.includes(f)).map(f => ({ u: f.properties.usage_1, d: md(f.geometry) })).sort((a, b) => a.d - b.d);
-      const res = oth.filter(x => x.u === 'Résidentiel');
-      O.isolement = bt.err ? null : { batiments_sur_parcelle: own.length, voisin_m: res.length ? res[0].d : null,
-        maisons_100m: res.filter(x => x.d < 100).length, maisons_250m: res.filter(x => x.d < 250).length };
+      /* La maison = le bâtiment résidentiel le plus proche du point d'adresse (40 m au plus), de préférence sur la parcelle.
+         Premier essai (10/10/2026) : la maison du bien comptée comme « voisin à 14 m » quand le point tombait sur une
+         autre parcelle (jardin, route), et les garages comptés comme maisons. D'où : surface d'au moins 40 m² pour un voisin,
+         et distance mesurée de mur à mur (sommets des deux bâtiments), pas d'un point. */
+      const aire = gm => { const r = gm.type === 'Polygon' ? gm.coordinates[0] : (gm.coordinates[0] || [])[0] || []; let a = 0;
+        for (let i = 0, k = r.length - 1; i < r.length; k = i++) a += (r[k][0] - r[i][0]) * kx * (r[k][1] + r[i][1]) * ky; return Math.abs(a / 2); };
+      const surParcelle = bats.filter(f => inPoly(first(f.geometry), parc && parc.geometry));
+      const resid = bats.filter(f => f.properties.usage_1 === 'Résidentiel').map(f => ({ f, d: Math.min(...verts(f.geometry).map(c => dist(c, H))) }));
+      const proche = resid.filter(x => x.d <= 40).sort((a, b) => (surParcelle.includes(b.f) - surParcelle.includes(a.f)) || a.d - b.d)[0];
+      const refB = proche ? proche.f : (surParcelle.find(f => f.properties.usage_1 === 'Résidentiel') || null);
+      const own = new Set([...surParcelle, ...(refB ? [refB] : [])]);
+      const vRef = refB ? verts(refB.geometry) : [H];
+      const H2 = refB ? first(refB.geometry) : H;
+      const md = gm => { let m = 1e9; const vs = verts(gm); for (const a of vs) for (const b of vRef) { const d = dist(a, b); if (d < m) m = d; } return m; };
+      const loin = 1100;   // pré-filtre grossier avant le calcul mur à mur
+      const oth = bats.filter(f => !own.has(f) && dist(first(f.geometry), H2) < loin).map(f => ({ u: f.properties.usage_1, a: aire(f.geometry), d: md(f.geometry) })).sort((a, b) => a.d - b.d);
+      const res = oth.filter(x => x.u === 'Résidentiel' && x.a >= 40);
+      O.isolement = bt.err ? null : { maison_trouvee: !!refB, surface_maison_m2: refB ? Math.round(aire(refB.geometry)) : null,
+        voisin_m: res.length ? res[0].d : null, maisons_100m: res.filter(x => x.d < 100).length, maisons_250m: res.filter(x => x.d < 250).length };
       O.agricoles_m = bt.err ? null : oth.filter(x => x.u === 'Agricole').slice(0, 6).map(x => x.d);
       O.lignes = le.err ? null : (le.features || []).map(f => ({ kv: parseInt(f.properties.voltage, 10) || null, voltage: f.properties.voltage || '?', d: md(f.geometry) })).sort((a, b) => a.d - b.d);
       const rmin = {};

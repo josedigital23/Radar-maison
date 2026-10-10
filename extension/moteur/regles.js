@@ -131,17 +131,24 @@
       const sech = [...new Set(secheresses)].sort();
       carte('sol', sech.length ? 3 : 2, 'Argiles : exposition forte', sech.length ? `Sécheresse reconnue en catastrophe naturelle : ${sech.slice(-3).join(', ')}` : 'Sol qui gonfle et se rétracte', sech.length ? 'Géorisques' : 'BRGM',
         { q: [Q('sur place', 'Fissures en façade ou aux angles des ouvertures ?', 'argiles fortes'), ...(sech.length ? [Q('vendeur', 'Un sinistre sécheresse a-t-il été déclaré ou indemnisé ?', `arrêtés ${sech.slice(-2).join(', ')}`)] : [])] });
-    } else if (argiles === 'moyenne' && secheresses.length) {
-      carte('sol', 1, 'Argiles : exposition moyenne', `Sécheresse reconnue en ${[...new Set(secheresses)].sort().slice(-2).join(', ')}`, 'Géorisques',
-        { q: [Q('sur place', 'Fissures en façade ?', 'argiles moyennes')] });
+    } else if (argiles === 'moyenne') {
+      // Calibrage du 10/10/2026 : sur 8 biens réels, « argiles moyennes + sécheresse 2018-2020 » sortait 6 fois — tout le 71.
+      // Pas de carte : une question, rien de plus.
+      questionsLibres.push(Q('sur place', 'Fissures en façade ?', 'argiles moyennes'));
     }
     if (String(G.radon) === '3') carte('radon', T.cave ? 3 : 2, 'Radon', `Potentiel catégorie 3${T.cave ? ', avec cave ou sous-sol' : ''}`, 'Géorisques',
       { q: [Q('documents', 'Une mesure de radon a-t-elle été faite ?', 'radon catégorie 3')] });
     if (K.ppr_inondation > 0) carte('inondation', 3, 'Zone inondable réglementée', 'Dans un plan de prévention du risque inondation', 'BRGM',
       { q: [Q('notaire', 'Sinistres inondation déjà indemnisés ?', 'PPR inondation'), Q('mairie', 'Zone du PPR : rouge ou bleue ?', 'PPR inondation')] });
-    else if (inondCat.length >= 2) carte('inondation', 2, 'Inondations reconnues dans la commune', `${inondCat.length} arrêtés de catastrophe naturelle, dernier en ${annee(inondCat.map(x => x.date).sort().pop())}`, 'Géorisques',
-      { q: [Q('vendeur', 'La maison a-t-elle déjà été inondée ?', `${inondCat.length} arrêtés`)] });
-    else if (K.eaip > 0) carte('inondation', 1, 'Zone inondable potentielle', 'Enveloppe potentielle, pas une zone réglementée', 'BRGM');
+    else {
+      /* Calibrage du 10/10/2026 : 8 communes sur 8 avaient au moins 2 arrêtés « inondation » (1982, 1999…).
+         On ne compte que depuis 2000, et la carte n'est grave que si le bien est dans l'enveloppe inondable potentielle. */
+      const recents = inondCat.filter(x => String(x.date) >= '2000');
+      if (K.eaip > 0) carte('inondation', recents.length ? 2 : 1, 'Zone inondable potentielle',
+        recents.length ? `Enveloppe potentielle · ${recents.length} arrêté${recents.length > 1 ? 's' : ''} depuis 2000` : 'Enveloppe potentielle, pas une zone réglementée', 'BRGM',
+        { q: [Q('vendeur', 'La maison a-t-elle déjà été inondée ?', 'zone inondable potentielle')] });
+      else if (recents.length >= 4) carte('inondation', 1, 'Inondations fréquentes dans la commune', `${recents.length} arrêtés depuis 2000 · le bien est hors zone inondable potentielle`, 'Géorisques');
+    }
     if (K.nappe && /d[ée]bordement/i.test(K.nappe) && !/pas de d[ée]bordement/i.test(K.nappe)) carte('nappe', 2, 'Remontée de nappe', 'Zone sujette aux débordements de nappe', 'BRGM', { q: [Q('sur place', 'Cave ou sous-sol humides ?', 'nappe')] });
     else if (K.nappe && /inondations? de cave/i.test(K.nappe) && !/pas de/i.test(K.nappe)) { if (T.cave) carte('nappe', 1, 'Nappe proche', 'Zone sujette aux inondations de cave', 'BRGM', { q: [Q('sur place', 'Cave humide, traces d’eau ?', 'nappe')] }); }
     const cav = (K.cavites_m || []).filter(d => d < 500), mvt = (K.mvt_m || []).filter(d => d < 500);
@@ -173,7 +180,7 @@
     if (eol != null && eol < 1500) carte('eolienne', 1, 'Éolienne', `à ${m(eol)}`, 'IGN');
     const cas = (G.casias || []).find(x => x.d != null && x.d < 300);
     if (cas) carte('pollution', 2, 'Ancien site industriel', `${cas.nom || 'activité'} à ${m(cas.d)}`, 'Géorisques', { q: [Q('vendeur', 'Que faisait le site voisin ? Potager possible ?', `ancien site à ${m(cas.d)}`)] });
-    if (c.eau && c.eau.non_conformes > 0) carte('eau', 1, 'Eau du robinet', `${c.eau.non_conformes} prélèvement${c.eau.non_conformes > 1 ? 's' : ''} non conforme${c.eau.non_conformes > 1 ? 's' : ''} sur ${c.eau.prelevements}`, 'Hub’Eau');
+    if (c.eau && (c.eau.non_conformes >= 2 || (c.eau.prelevements && c.eau.non_conformes / c.eau.prelevements >= 0.2))) carte('eau', 1, 'Eau du robinet', `${c.eau.non_conformes} prélèvement${c.eau.non_conformes > 1 ? 's' : ''} non conforme${c.eau.non_conformes > 1 ? 's' : ''} sur ${c.eau.prelevements}`, 'Hub’Eau');
 
     /* ===== G. Urbanisme ===== */
     const zones = c.plu || null;
