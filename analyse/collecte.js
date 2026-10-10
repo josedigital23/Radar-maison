@@ -75,11 +75,14 @@ O.taxe_fonciere = tf ? `taux global TFB ${tf.taux_global_tfb} % (${tf.exercice})
 const eau = (await j(`https://hubeau.eaufrance.fr/api/v1/qualite_eau_potable/resultats_dis?code_commune=${P.insee}&size=500&fields=date_prelevement,conformite_limites_bact_prelevement,conformite_limites_pc_prelevement`)).data || [];
 const pr = new Map(); eau.forEach(r => pr.set(r.date_prelevement, r));
 const pv = [...pr.values()];
-O.eau_potable = `${pv.length} prélèvements, ${pv.filter(r => r.conformite_limites_bact_prelevement === 'N' || r.conformite_limites_pc_prelevement === 'N').length} non conformes (dernier : ${pv[0]?.date_prelevement?.slice(0, 10) || '?'})`;
+const dernier = pv.map(r => r.date_prelevement || '').sort().pop(); // la date la plus récente, sans supposer l'ordre de l'API
+O.eau_potable = `${pv.length} prélèvements, ${pv.filter(r => r.conformite_limites_bact_prelevement === 'N' || r.conformite_limites_pc_prelevement === 'N').length} non conformes (dernier : ${dernier?.slice(0, 10) || '?'})`;
 
 // 9. DVF : maisons vendues dans la commune (5 ans), comparables 0,6–1,6 × surface
 const dv = (await j(`https://apicarto.ign.fr/api/cadastre/division?code_insee=${P.insee}`)).features || [];
-const secs = [...new Set(dv.map(f => f.properties.section.padStart(5, '0')))];
+// Section DVF = préfixe de commune absorbée (3 car.) + section (2 car.). « 000 » + « 0A » = « 0000A », comme avant ;
+// mais dans une commune nouvelle, les sections d'une commune déléguée portent un autre préfixe et étaient ignorées.
+const secs = [...new Set(dv.map(f => (f.properties.com_abs || '000') + f.properties.section.padStart(2, '0')))];
 const muts = (await Promise.all(secs.map(s => j(`https://app.dvf.etalab.gouv.fr/api/mutations3/${P.insee}/${s}`)))).flatMap(r => r.mutations || []);
 const by = new Map();
 for (const m of muts) { if (m.nature_mutation !== 'Vente') continue; const x = by.get(m.id_mutation) || {date: m.date_mutation, valeur: +m.valeur_fonciere, surface: 0, terrain: 0, maisons: 0, parcelles: new Set()}; if (m.type_local === 'Maison') { x.surface += +m.surface_reelle_bati || 0; x.maisons++; } x.terrain = Math.max(x.terrain, +m.surface_terrain || 0); x.parcelles.add(m.id_parcelle); by.set(m.id_mutation, x); }
@@ -101,9 +104,9 @@ O.historique_dpe = [...hist.map(x => `${x.date_etablissement_dpe} · ${x.etiquet
 const DEST = {1: 'habitation', 2: 'hébergement hôtelier', 3: 'bureaux', 4: 'commerce', 5: 'artisanat', 6: 'industrie', 7: 'agricole', 8: 'entrepôt', 9: 'service public'};
 const mot = norm(rue).split(/\s+/).filter(w => w.length > 3 && !/^(RUE|ROUTE|CHEMIN|IMPASSE|ALLEE|PLACE|LIEU|DIT|GRANDE|PETITE)$/.test(w)).pop() || '';
 const parcs = new Set(parc ? [`${parc.properties.section}${parc.properties.numero}`.replace(/^0+/, '')] : []);
-const permis = [];
+const permis = []; let permisTronque = false;
 for (const rid of ['65a9e264-7a20-46a9-9d98-66becb817bc3', '8f23d65f-7142-4ac5-94c1-077b028255bf']) {
-  for (let pg = 1; pg <= 6; pg++) {
+  for (let pg = 1; pg <= 10; pg++) {
     const r = await j(`https://tabular-api.data.gouv.fr/api/resources/${rid}/data/?COMM__exact=${P.insee}&page_size=50&page=${pg}`);
     for (const x of r.data || []) {
       const ref = `${x.SEC_CADASTRE1 || ''}${(x.NUM_CADASTRE1 || '').replace(/^0+/, '')}`.replace(/^0+/, '');
@@ -114,9 +117,12 @@ for (const rid of ['65a9e264-7a20-46a9-9d98-66becb817bc3', '8f23d65f-7142-4ac5-9
       permis.push(`${x.DATE_REELLE_AUTORISATION || x.AN_DEPOT || '?'} · ${x.TYPE_DAU} · ${[x.ADR_NUM_TER, x.ADR_LIBVOIE_TER, x.ADR_LIEUDIT_TER].filter(Boolean).join(' ')} · parcelle ${ref} · ${DEST[x.DESTINATION_PRINCIPALE] || 'logement'}${surf ? ' · ' + surf : ''}${parcs.has(ref) ? ' · ⚑ PARCELLE DU BIEN' : memeRue ? ' · même rue' : ''}`);
     }
     if (!r.links?.next) break;
+    if (pg === 10) permisTronque = true; // la base en a plus : ce qui suit n'a pas été lu
   }
 }
 O.permis = [...new Set(permis)].sort().reverse().slice(0, 25);
+// Même piège que l'ADEME à Changy : une liste coupée ne dit pas qu'elle est coupée. On le dit.
+if (permisTronque) O.permis_incomplet = 'Plus de 500 autorisations dans la commune pour une des deux bases : liste incomplète, un permis du bien ou de la rue peut manquer.';
 window.__R = JSON.stringify(O);
 })().catch(e => { window.__R = 'ERREUR ' + e.message; });
 'lancé';

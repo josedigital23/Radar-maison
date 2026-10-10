@@ -20,8 +20,9 @@ mn = lambda k: (t.get(k) or {}).get("min") if isinstance(t.get(k), dict) else No
 s_trav = palier(mn("travail"), [(10, 1), (17, .7), (25, .35)])
 s_ecole = palier(mn("ecole"), [(5, 1), (10, .7), (15, .35)])
 s_super = palier(mn("supermarche"), [(4.99, 1), (9.99, .7), (14.99, .35)])
-dep = mn("depannage"); s_dep = 1 if dep is not None and dep <= 5 else 0
-s_cour = None if s_super is None else min(1, .8 * s_super + .2 * s_dep + (.1 if s_dep else 0))
+dep = mn("depannage"); s_dep = None if dep is None else 1 if dep <= 5 else 0
+# Boulangerie inconnue = on note les courses sur le seul supermarché, pas comme une absence de boulangerie
+s_cour = None if s_super is None else s_super if s_dep is None else min(1, .8 * s_super + .2 * s_dep + (.1 if s_dep else 0))
 s_sport = palier(mn("sport"), [(10, 1), (20, .5)])
 autre = mn("autre_salle")
 if autre is not None and autre <= 10:
@@ -54,13 +55,18 @@ cout_an = sum(v for v in C.values() if isinstance(v, (int, float)))
 CI = D.get("couts_indicatifs", {})  # non sourcés : affichés, hors note
 s_couts = (palier(cout_an / 12, [(400, 1), (550, .7), (700, .4)]) or .1) if C else None
 s_net = {"fibre": 1, "fibre_prevue": .6, "4g_bonne": .4, "rien": 0}.get(D.get("connexion"))
-F = [("Trajet travail", 8, s_trav, f"{mn('travail')} min"), ("Trajet école", 6, s_ecole, f"{mn('ecole')} min"),
-     ("Courses", 4, s_cour, f"supermarché {mn('supermarche')} min"), ("Sport", 2, s_sport, f"{mn('sport')} min"),
-     ("Budget total", 15, s_budget, f"{eur(budget)} €"), ("Maison", 15, s_maison, f"{surf} m² · {ch} ch."),
+# Affichage d'une valeur : « ? » quand elle est inconnue — jamais « None », jamais 0, jamais ✗
+def aff(x, fmt="{}"):
+    return "?" if x is None else fmt.format(x)
+def oui(x):
+    return "?" if x is None else "✓" if x else "✗"
+F = [("Trajet travail", 8, s_trav, aff(mn('travail'), "{} min")), ("Trajet école", 6, s_ecole, aff(mn('ecole'), "{} min")),
+     ("Courses", 4, s_cour, "supermarché " + aff(mn('supermarche'), "{} min")), ("Sport", 2, s_sport, aff(mn('sport'), "{} min")),
+     ("Budget total", 15, s_budget, f"{eur(budget)} €"), ("Maison", 15, s_maison, f"{aff(surf, '{} m²')} · {aff(ch, '{} ch.')}"),
      ("Prix vs marché", 10, s_marche, f"{eur(pm2)} vs {eur(med)} €/m²" if ratio else "comparables insuffisants"),
-     ("Dépendances", 10, s_depb, f"garage {'?' if g is None else '✓' if g else '✗'} · atelier {'?' if a is None else '✓' if a else '✗'}"),
-     ("Isolement", 10, s_iso, f"voisin à {vois} m"), ("Terrain", 8, s_ter, f"{eur(ter or 0)} m²"),
-     ("Coûts annuels", 7, s_couts, f"{eur(cout_an/12)} €/mois"), ("Connexion", 5, s_net, D.get("connexion") or "inconnue")]
+     ("Dépendances", 10, s_depb, f"garage {oui(g)} · atelier {oui(a)}"),
+     ("Isolement", 10, s_iso, "voisin à " + aff(vois, "{} m")), ("Terrain", 8, s_ter, "?" if ter is None else f"{eur(ter)} m²"),
+     ("Coûts annuels", 7, s_couts, f"{eur(cout_an/12)} €/mois" if C else "?"), ("Connexion", 5, s_net, D.get("connexion") or "inconnue")]
 # Critère inconnu = pas de note : la note globale est calculée sur les critères connus, ramenée sur 100
 W_conn = sum(p for _, p, s, _ in F if s is not None)
 pts = sum(p * s for _, p, s, _ in F if s is not None)
@@ -69,9 +75,16 @@ loc = D.get("location", {})
 bonus_loc = min(5, max(0, loc.get("net_annuel", 0)) / 1000); bonus_pisc = 3 if D.get("piscine") else 0
 bonus = min(8, bonus_loc + bonus_pisc)
 note = min(100, round((pts / W_conn * 100 if W_conn else 0) + bonus))
-GOOD, WARN, SER, CRIT = "#0ca30c", "#fab219", "#ec835a", "#d03b3b"
-coul, lib, ico = ((GOOD, "Très bonne affaire", "✓") if note >= 75 else (WARN, "Intéressante", "◐") if note >= 60
-                  else (SER, "Moyenne", "!") if note >= 45 else (CRIT, "À éviter", "✗"))
+GOOD, WARN, SER, CRIT, GRIS = "#0ca30c", "#fab219", "#ec835a", "#d03b3b", "#8a8983"
+# En dessous de ce seuil, la note repose sur trop peu de critères : pas de verdict.
+# Exemple constaté : prix seul connu → 100/100 « Très bonne affaire » sur 15 % des critères.
+SEUIL_VERDICT = 60
+provisoire = couverture < SEUIL_VERDICT
+if provisoire:
+    coul, lib, ico = GRIS, "Note provisoire — données insuffisantes", "?"
+else:
+    coul, lib, ico = ((GOOD, "Très bonne affaire", "✓") if note >= 75 else (WARN, "Intéressante", "◐") if note >= 60
+                      else (SER, "Moyenne", "!") if note >= 45 else (CRIT, "À éviter", "✗"))
 SER_COL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6"]
 
 # ---------------- Composants visuels ----------------
@@ -211,10 +224,10 @@ def dpe_svg():
     return f'<svg viewBox="0 0 260 162" width="260" height="162">{"".join(o)}</svg>{ges}'
 
 def facts():
-    rows = [("Surface", f'{surf} m²'), ("Chambres", ch), ("Terrain", f'{eur(ter or 0)} m²'),
-            ("Garage / abri", "✓" if g else "✗"), ("Atelier", "✓" if a else "✗"), ("Piscine", "✓" if D.get("piscine") else "✗"),
-            ("Chauffage", (D.get("dpe") or {}).get("chauffage", "—"))]
-    return '<div class="facts">' + "".join(f'<div><small>{k}</small><b>{E(str(v))}</b></div>' for k, v in rows) + '</div>'
+    rows = [("Surface", aff(surf, "{} m²")), ("Chambres", aff(ch)), ("Terrain", "?" if ter is None else f'{eur(ter)} m²'),
+            ("Garage / abri", oui(g)), ("Atelier", oui(a)), ("Piscine", oui(D.get("piscine"))),
+            ("Chauffage", (D.get("dpe") or {}).get("chauffage") or "?")]
+    return '<div class="facts">' + "".join(f'<div><small>{k}</small><b>{E(str(val))}</b></div>' for k, val in rows) + '</div>'
 
 def iso_svg():
     W, mx = 1000, 400; xs = lambda v: 20 + (W - 40) * min(v, mx) / mx
@@ -223,7 +236,7 @@ def iso_svg():
     o.append('<text x="20" y="14" class="tick">🏠 maison → premier voisin</text>')
     if vois is not None:
         o.append(f'<circle cx="{xs(vois):.1f}" cy="28" r="9" fill="var(--fg)" stroke="var(--card)" stroke-width="2"/><text x="{xs(vois):.1f}" y="74" text-anchor="middle" class="lab">{vois} m</text>')
-    cnt = f'<div class="mini"><b>{iso.get("maisons_100m","?")}</b><small>maison(s) &lt; 100 m</small></div><div class="mini"><b>{iso.get("maisons_250m","?")}</b><small>&lt; 250 m</small></div><div class="mini"><b style="color:{CRIT if iso.get("vis_a_vis") else GOOD}">{"Oui" if iso.get("vis_a_vis") else "Non"}</b><small>vis-à-vis jardin</small></div>'
+    cnt = f'<div class="mini"><b>{aff(iso.get("maisons_100m"))}</b><small>maison(s) &lt; 100 m</small></div><div class="mini"><b>{aff(iso.get("maisons_250m"))}</b><small>&lt; 250 m</small></div><div class="mini"><b style="color:{GRIS if iso.get("vis_a_vis") is None else CRIT if iso.get("vis_a_vis") else GOOD}">{"?" if iso.get("vis_a_vis") is None else "Oui" if iso.get("vis_a_vis") else "Non"}</b><small>vis-à-vis jardin</small></div>'
     return f'<svg viewBox="0 0 {W} 80" class="wide">{"".join(o)}</svg><div class="minis">{cnt}</div>'
 
 NIV = {"ok": (GOOD, "✓"), "moyen": (WARN, "!"), "fort": (CRIT, "✗"), "inconnu": ("#8a8983", "?")}
@@ -279,8 +292,8 @@ details{{margin-top:10px}}summary{{cursor:pointer;font-weight:700}}ul{{margin:8p
 @media (max-width:760px){{.hero,.g2{{grid-template-columns:1fr}}.kpis{{grid-template-columns:1fr 1fr}}.fr{{grid-template-columns:110px 1fr 56px 28px}}}}
 </style></head><body><main>
 <h1>{E(D.get('titre',''))}</h1><small>{E(D.get('adresse',''))} · {E(D.get('date',''))}</small>
-<section class="panel"><div class="hero"><div>{jauge(note, coul)}</div><div><span class="badge" style="background:{coul}">{ico} {lib}</span>{f' <span class="tag">note calculée sur {couverture} % des critères</span>' if couverture < 100 else ''}<p class="syn">{E(D.get('synthese',''))}</p></div></div>
-<div class="kpis">{kpi('Prix', eur(prix)+' €', f'{eur(pm2 or 0)} €/m²')}{kpi('Budget total', eur(budget)+' €', 'prix + travaux', bud_col)}{kpi('Coût mensuel', eur(cout_an/12)+' €', 'hors crédit')}{kpi('vs marché', f'{(ratio-1)*100:+.0f} %' if ratio else '—', f'médiane {eur(med or 0)} €/m²', mar_col)}</div></section>
+<section class="panel"><div class="hero"><div>{jauge(note, coul)}</div><div><span class="badge" style="background:{coul}">{ico} {lib}</span>{f' <span class="tag">note calculée sur {couverture} % des critères' + (f' — verdict à partir de {SEUIL_VERDICT} %' if provisoire else '') + '</span>' if couverture < 100 else ''}<p class="syn">{E(D.get('synthese',''))}</p></div></div>
+<div class="kpis">{kpi('Prix', eur(prix)+' €', f'{eur(pm2)} €/m²' if pm2 else 'surface inconnue')}{kpi('Budget total', eur(budget)+' €', 'prix + travaux', bud_col)}{kpi('Coût mensuel', eur(cout_an/12)+' €' if C else '?', 'hors crédit')}{kpi('vs marché', f'{(ratio-1)*100:+.0f} %' if ratio else '—', f'médiane {eur(med)} €/m²' if med else 'moins de 3 comparables', mar_col)}</div></section>
 {sec(1, "Points d'attention", ff(D.get('points_attention', []), '!', SER), 'att')}
 {sec(2, "Forces et faiblesses", f'<div class="g2"><div><h3>Forces</h3>{ff(D.get("forces", []), "✓", GOOD)}</div><div><h3>Faiblesses</h3>{ff(D.get("faiblesses", []), "✗", CRIT)}</div></div>')}
 {sec(3, "Questions pour la visite", questions())}
@@ -294,5 +307,5 @@ details{{margin-top:10px}}summary{{cursor:pointer;font-weight:700}}ul{{margin:8p
 {sec(11, "Ce que je n'ai PAS vérifié", f'<ul>{li(D.get("non_verifie", []))}</ul><details><summary>Hypothèses de calcul</summary><ul>{li(D.get("hypotheses", []))}</ul></details><details><summary>Sources</summary><ul>{src}</ul></details>')}
 </main></body></html>"""
 open(sys.argv[2], "w", encoding="utf-8").write(page)
-print(json.dumps({"note": note, "verdict": lib, "budget_total": round(budget), "cout_mensuel": round(cout_an / 12),
+print(json.dumps({"note": note, "verdict": lib, "provisoire": provisoire, "budget_total": round(budget), "cout_mensuel": round(cout_an / 12),
                   "prix_m2": round(pm2 or 0), "mediane_dvf": round(med or 0), "nb_comparables": len(comps), "criteres_notes_pct": couverture, "a_determiner": [n for n, p, s, d in F if s is None]}, ensure_ascii=False))

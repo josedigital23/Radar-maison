@@ -36,6 +36,8 @@ python3 analyse/rapport.py data.json rapport.html
 
 ### Règles de notation
 - **Rien d'incertain n'est noté.** Une donnée inconnue ou contradictoire vaut `null` : le critère s'affiche « à déterminer », la note globale est calculée sur les critères connus (la part notée est affichée), et le doute devient une question pour la visite.
+- **Pas de verdict sous 60 % de critères notés.** La note reste visible, en gris, avec la mention « Note provisoire — données insuffisantes ». Sans ce seuil, un prix seul donnait 100/100 « Très bonne affaire ».
+- **Une valeur inconnue s'affiche « ? »**, jamais ✗, « Non » ou 0 : un garage inconnu n'est pas un garage absent.
 - Une dépense supposée (`"certain": false`) est affichée mais **hors budget**. Un coût non sourcé va dans `couts_indicatifs`, hors note.
 - Les risques et nuisances ne changent pas la note : ils sont listés comme points d'attention, avec distance et source.
 
