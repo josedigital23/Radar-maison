@@ -55,7 +55,7 @@ Code : `extension/moteur/regles.js`. Tests : `tests/test_moteur.js` (`node --tes
 
 ## Calibrage du 10/10/2026 (8 biens réels)
 
-Changy, Saint-Aubin, Digoin, Vendenesse, Moroges, Paray (route de Saint-Yan), Épinac, Artaix.
+Changy, Saint-Aubin, Digoin, Vendenesse, Moroges, Paray, Épinac, Artaix (adresses volontairement absentes du dépôt, qui est public).
 
 | Constat | Correction |
 |---|---|
