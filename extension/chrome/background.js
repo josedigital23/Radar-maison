@@ -18,7 +18,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     });
     if (!r || !r.result) {
       // le script de contenu ne tournait pas sur cette page : on l'injecte, puis on ouvre
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["compat.js", "content.js"] });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["compat.js", "moteur/collecte.js", "moteur/notation.js", "moteur/regles.js", "rapport.js", "content.js"] });
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => { window.__radarMaison && window.__radarMaison.basculer(); }

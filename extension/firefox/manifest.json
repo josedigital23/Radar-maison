@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Radar Maison",
-  "version": "1.15",
+  "version": "2.0",
   "description": "Retrouve l'adresse exacte d'un bien immobilier à partir de son annonce, via la base DPE de l'ADEME.",
   "browser_specific_settings": {
     "gecko": {
@@ -11,7 +11,17 @@
   "permissions": [
     "https://data.ademe.fr/*",
     "https://api-adresse.data.gouv.fr/*",
-    "https://files.data.gouv.fr/*"
+    "https://files.data.gouv.fr/*",
+    "https://*.data.gouv.fr/*",
+    "https://apicarto.ign.fr/*",
+    "https://data.geopf.fr/*",
+    "https://www.georisques.gouv.fr/*",
+    "https://mapsref.brgm.fr/*",
+    "https://recherche-entreprises.api.gouv.fr/*",
+    "https://data.education.gouv.fr/*",
+    "https://data.economie.gouv.fr/*",
+    "https://hubeau.eaufrance.fr/*",
+    "storage"
   ],
   "background": {
     "scripts": [
@@ -25,6 +35,10 @@
         "https://*/*"
       ],
       "js": [
+        "moteur/collecte.js",
+        "moteur/notation.js",
+        "moteur/regles.js",
+        "rapport.js",
         "content.js"
       ],
       "run_at": "document_idle"
@@ -41,5 +55,8 @@
   "icons": {
     "48": "icones/48.png",
     "128": "icones/128.png"
-  }
+  },
+  "web_accessible_resources": [
+    "montserrat.woff2"
+  ]
 }

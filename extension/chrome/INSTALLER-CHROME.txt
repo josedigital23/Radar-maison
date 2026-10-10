@@ -75,13 +75,19 @@ des maisons autour (base DVF).
      Clique dessus. (L'icône Radar Maison en haut à droite fait la même chose.)
 
   4. Un panneau s'ouvre à droite et lance la recherche tout seul.
-     En haut : ce que l'extension a lu dans l'annonce (surface, consommation,
-     date du diagnostic…). Si une valeur est fausse, corrige-la :
-     la recherche repart automatiquement.
+     En haut : la commune, l'interprétation (« Dans la ville », « Autour »,
+     « Autour, pas dedans ») et le rayon. Ce que l'extension a lu dans
+     l'annonce (surface, date du diagnostic…) est rangé dans
+     « Caractéristiques retenues » : ouvre-le si une valeur est fausse.
 
-  5. En dessous : les adresses candidates, la plus probable en premier.
-     Clique sur une fiche pour voir la vue aérienne, Street View, le cadastre
-     et les prix de vente réels des maisons voisines.
+  5. En dessous : les adresses candidates, la plus probable en premier,
+     avec Street View et la vue aérienne.
+
+  6. « Rapport détaillé » : la note sur 100, huit indicateurs (trajets,
+     courses, budget, prix, maison, isolement, coûts, connexion), puis les
+     points d'attention et les questions à poser pendant la visite.
+     Clique sur un indicateur pour voir son détail et compléter ce qui
+     manque (chambres, garage, style…) : la note se recalcule.
 
   La pastille n'apparaît que sur les pages qui ressemblent à une annonce.
   Ailleurs, l'extension reste invisible.

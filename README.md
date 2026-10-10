@@ -6,13 +6,23 @@ Outils personnels d'analyse d'annonces immobilières en Saône-et-Loire (71) : r
 
 | Composant | Rôle | État |
 |---|---|---|
-| **Extension Radar Maison** (`extension/`, Chrome MV3 et Firefox MV2) | Panneau sur les annonces Leboncoin, SeLoger, sites d'agence : adresse par le DPE, comparables DVF. Blocs Géorisques et PLU encore vides. | v1.15 |
+| **Extension Radar Maison** (`extension/`, Chrome MV3 et Firefox MV2) | Écran 1 : l'adresse par le DPE. Écran 2 : le rapport détaillé (note, 8 anneaux, points d'attention, questions pour la visite), sans IA. | v2.0 |
 | **Veille** | Agrège les alertes e-mail des portails (PHP + MySQL, OVH). | En construction |
 | **`analyse/`** (ce dépôt) | Scripts de collecte, de risques et de rapport. Utilisés par la skill Claude « analyse-maison » ; réutilisables par l'extension. | Fonctionnel, testé sur 3 biens le 10/10/2026 |
 
 ## L'extension `extension/`
 
-Un seul `content.js` pour les deux navigateurs ; seuls le manifest et le script de fond diffèrent (`chrome/`, `firefox/`).
+Un seul code pour les deux navigateurs ; seuls le manifest et le script de fond diffèrent (`chrome/`, `firefox/`).
+
+| Fichier | Rôle |
+|---|---|
+| `content.js` | Lecture de l'annonce, recherche de l'adresse dans l'ADEME, écran 1 |
+| `rapport.js` | Style commun et écran 2 : note, anneaux, détail éditable, points d'attention, questions |
+| `moteur/collecte.js` | Toutes les données publiques autour du bien (même code que la console et les tests) |
+| `moteur/notation.js` | Le dossier du bien, la note sur 100, les 8 anneaux ; profil personnel (`PROFIL`) |
+| `moteur/regles.js` | Les règles qui écrivent le rapport : voir [`docs/regles.md`](docs/regles.md) |
+
+Le rapport se remplit au fil de la collecte (2 à 4 s sur les biens testés). Les corrections faites dans le détail d'un anneau et les questions cochées sont gardées par bien, dans le navigateur.
 
 ```bash
 python3 extension/assembler.py     # → dist/radar-maison-chrome/ et dist/radar-maison-firefox/ (+ .zip)
@@ -46,7 +56,8 @@ eval(await (await fetch('https://raw.githubusercontent.com/josedigital23/Radar-m
 ```bash
 python3 analyse/rapport.py data.json rapport.html                  # critères de Victorien (analyse/profil.json)
 python3 analyse/rapport.py data.json rapport.html profil-autre.json # critères de quelqu'un d'autre
-python3 -m unittest discover tests                                  # 5 tests, sans dépendance
+python3 -m unittest discover tests                                  # 5 tests du rapport Python
+node --test tests/test_moteur.js                                    # 17 tests du moteur de l'extension
 ```
 
 `profil.json` porte ce qui est personnel : budget (confortable / acceptable / plafond), surface et chambres minimales, seuil de verdict.
@@ -88,9 +99,11 @@ Le cadre du projet et le journal des décisions sont dans [`docs/PROJET_REGLES_D
 ## Prochaines étapes
 
 1. ~~Mettre le code de l'extension dans ce dépôt~~ → fait le 10/10/2026 (v1.15).
-2. **Brancher les scripts sur l'écran 2 de l'extension** : remplir les blocs Géorisques et PLU, puis ajouter trajets, historique DPE et permis. Spécification et maquette d'abord, puis feu vert, puis code.
-3. **Traduire `rapport.py` en JavaScript** pour que l'extension produise le rapport sans Claude (usage par la compagne, sans compte).
-4. **Questions pour la visite générées par règles**, sans IA : radon catégorie 3, bâtiment agricole à moins de 100 m, surface du DPE qui augmente sans autorisation, annonce contradictoire, nappe et caves, argiles et fissures…
+2. ~~Brancher les scripts sur l'écran 2~~ → fait le 10/10/2026 (v2.0).
+3. ~~Le rapport sans Claude~~ → fait : `moteur/` en JavaScript. `analyse/rapport.py` reste pour la skill ; les deux notations divergent sur les coûts (l'extension note l'énergie seule tant que la taxe foncière n'est pas saisie).
+4. ~~Questions générées par règles~~ → fait, calibré sur 8 biens réels : [`docs/regles.md`](docs/regles.md).
+4 bis. **Tester la lecture DVF dans l'extension installée** : elle n'a pas pu être testée en réel (le navigateur de test refuse ces fichiers), seulement sur un CSV d'exemple.
+4 ter. **Page d'options** : destination travail, budget, critères d'un autre profil (aujourd'hui dans `moteur/notation.js`, `PROFIL`).
 5. **Nouvelles sources à intégrer** : photos aériennes historiques IGN (1950 → aujourd'hui, pour dater extensions et piscines), base nationale des bâtiments BDNB (année, matériaux, potentiel solaire et géothermie), effectifs des écoles, couverture mobile ARCEP, fibre à l'adresse.
 6. **Accélérer la skill** : lancer collecte, Géorisques et BRGM en parallèle ; photo aérienne seulement en cas de doute ; vérification de la fibre intégrée à la collecte.
 7. **Veille** : terminer les analyseurs SeLoger, Green Acres et LocationAd71.
