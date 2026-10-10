@@ -27,20 +27,21 @@ autre = mn("autre_salle")
 if autre is not None and autre <= 10:
     s_sport = max(s_sport or 0, .8)
 DEP = D.get("depenses_a_venir", [])
-travaux = sum((x.get("min", 0) + x.get("max", 0)) / 2 for x in DEP)
+DEP_OK = [x for x in DEP if x.get("certain", True)]  # une dépense supposée (certain: false) est affichée, pas comptée
+travaux = sum((x.get("min", 0) + x.get("max", 0)) / 2 for x in DEP_OK)
 prix = D["prix"]; budget = prix + travaux
 s_budget = palier(budget, [(250000, 1), (300000, .6), (335000, .25)])
 surf, ch = D.get("surface"), D.get("chambres")
 s_taille = None if surf is None else 1 if (surf >= 125 and (ch or 3) >= 3) else (.6 if (ch or 0) >= 3 else .1) if surf >= 100 else 0
-s_style = {"pierre_charme": 1, "neuf_recent": .6, "autre": .5, "sous_sol_70_80": .15}.get(D.get("style"), .5)
-s_maison = None if s_taille is None else .6 * s_taille + .4 * s_style
+s_style = {"pierre_charme": 1, "neuf_recent": .6, "autre": .5, "sous_sol_70_80": .15}.get(D.get("style"))
+s_maison = None if (s_taille is None or s_style is None) else .6 * s_taille + .4 * s_style
 comps = D.get("dvf", {}).get("comparables", [])
 med = st.median([c["eur_m2"] for c in comps]) if len(comps) >= 3 else None
 pm2 = prix / surf if surf else None
 ratio = pm2 / med if (pm2 and med) else None
 s_marche = palier(ratio, [(.85, 1), (1.0, .75), (1.15, .45), (1.3, .2)])
 g, a = D.get("garage_ou_abri"), D.get("atelier")
-s_depb = 1 if (g and a) else (.5 if (g or a) else 0)
+s_depb = None if (g is None or a is None) else (1 if (g and a) else .5 if (g or a) else 0)  # inconnu = à déterminer
 iso = D.get("isolement", {}); vois = iso.get("voisin_m")
 s_iso = None if vois is None else 1 if vois >= 200 else .75 if vois >= 100 else .45 if vois >= 50 else .15
 if s_iso is not None:
@@ -50,20 +51,24 @@ ter = D.get("terrain")
 s_ter = None if ter is None else (0 if ter < 500 else .4 if ter < 1000 else 1 if ter <= 3000 else .8)
 C = D.get("couts_annuels", {})
 cout_an = sum(v for v in C.values() if isinstance(v, (int, float)))
+CI = D.get("couts_indicatifs", {})  # non sourcés : affichés, hors note
 s_couts = (palier(cout_an / 12, [(400, 1), (550, .7), (700, .4)]) or .1) if C else None
-s_net = {"fibre": 1, "fibre_prevue": .6, "4g_bonne": .4, "rien": 0}.get(D.get("connexion"), .5)
+s_net = {"fibre": 1, "fibre_prevue": .6, "4g_bonne": .4, "rien": 0}.get(D.get("connexion"))
 F = [("Trajet travail", 8, s_trav, f"{mn('travail')} min"), ("Trajet école", 6, s_ecole, f"{mn('ecole')} min"),
      ("Courses", 4, s_cour, f"supermarché {mn('supermarche')} min"), ("Sport", 2, s_sport, f"{mn('sport')} min"),
      ("Budget total", 15, s_budget, f"{eur(budget)} €"), ("Maison", 15, s_maison, f"{surf} m² · {ch} ch."),
      ("Prix vs marché", 10, s_marche, f"{eur(pm2)} vs {eur(med)} €/m²" if ratio else "comparables insuffisants"),
-     ("Dépendances", 10, s_depb, f"garage {'✓' if g else '✗'} · atelier {'✓' if a else '✗'}"),
+     ("Dépendances", 10, s_depb, f"garage {'?' if g is None else '✓' if g else '✗'} · atelier {'?' if a is None else '✓' if a else '✗'}"),
      ("Isolement", 10, s_iso, f"voisin à {vois} m"), ("Terrain", 8, s_ter, f"{eur(ter or 0)} m²"),
      ("Coûts annuels", 7, s_couts, f"{eur(cout_an/12)} €/mois"), ("Connexion", 5, s_net, D.get("connexion") or "inconnue")]
-pts = sum(p * (s if s is not None else .5) for _, p, s, _ in F)
+# Critère inconnu = pas de note : la note globale est calculée sur les critères connus, ramenée sur 100
+W_conn = sum(p for _, p, s, _ in F if s is not None)
+pts = sum(p * s for _, p, s, _ in F if s is not None)
+couverture = W_conn  # sur 100 points de poids
 loc = D.get("location", {})
 bonus_loc = min(5, max(0, loc.get("net_annuel", 0)) / 1000); bonus_pisc = 3 if D.get("piscine") else 0
 bonus = min(8, bonus_loc + bonus_pisc)
-note = round(pts + bonus)
+note = min(100, round((pts / W_conn * 100 if W_conn else 0) + bonus))
 GOOD, WARN, SER, CRIT = "#0ca30c", "#fab219", "#ec835a", "#d03b3b"
 coul, lib, ico = ((GOOD, "Très bonne affaire", "✓") if note >= 75 else (WARN, "Intéressante", "◐") if note >= 60
                   else (SER, "Moyenne", "!") if note >= 45 else (CRIT, "À éviter", "✗"))
@@ -100,11 +105,13 @@ def ff(items, icon, col):
 def facteurs():
     o = []
     for n, p, s, d in F:
-        sc = s if s is not None else .5
+        if s is None:
+            o.append(f'<div class="fr"><span class="fn">{E(n)}<small>{E(d)}</small></span><span class="todo">à déterminer · voir les questions pour la visite</span><span class="fp">—</span><span class="fw">×{p}</span></div>')
+            continue
         lb, col = lvl(s)
         o.append(f'<div class="fr" title="{E(d)} · poids {p}"><span class="fn">{E(n)}<small>{E(d)}</small></span>'
-                 f'<span class="track"><span class="fill" style="width:{sc*100:.0f}%;background:{col}"></span></span>'
-                 f'<span class="fp">{sc*10:.1f}<small>/10</small></span><span class="fw">×{p}</span></div>')
+                 f'<span class="track"><span class="fill" style="width:{s*100:.0f}%;background:{col}"></span></span>'
+                 f'<span class="fp">{s*10:.1f}<small>/10</small></span><span class="fw">×{p}</span></div>')
     if bonus:
         o.append(f'<div class="fr"><span class="fn">Bonus<small>location {bonus_loc:.1f} · piscine {bonus_pisc}</small></span><span class="track"><span class="fill" style="width:{bonus/8*100:.0f}%;background:#2a78d6"></span></span><span class="fp">+{bonus:.1f}</span><span class="fw">pts</span></div>')
     return "".join(o)
@@ -144,7 +151,7 @@ def tr_table():
 def budget_svg():
     W, mx = 1000, 360000
     xs = lambda v: 10 + (W - 20) * min(v, mx) / mx
-    seg = [("Prix", prix, "#2a78d6")] + [(x["poste"], (x.get("min", 0) + x.get("max", 0)) / 2, SER_COL[(i + 1) % 6]) for i, x in enumerate(DEP)]
+    seg = [("Prix", prix, "#2a78d6")] + [(x["poste"], (x.get("min", 0) + x.get("max", 0)) / 2, SER_COL[(i + 1) % 6]) for i, x in enumerate(DEP_OK)]
     o, cur = [], 0
     for n, v, col in seg:
         o.append(f'<rect x="{xs(cur):.1f}" y="24" width="{max(1, xs(cur+v)-xs(cur)-2):.1f}" height="26" rx="5" fill="{col}"><title>{E(n)} : {eur(v)} €</title></rect>')
@@ -164,12 +171,14 @@ def donut():
         off += ln
     o.append(f'<text x="80" y="80" text-anchor="middle" class="mid">{eur(cout_an/12)} €</text><text x="80" y="98" text-anchor="middle" class="tick">par mois</text>')
     leg = "".join(f'<div class="lg"><i style="background:{SER_COL[i%6]}"></i><span>{E(k.split(" (")[0])}</span><b>{eur(v/12)} €</b></div>' for i, (k, v) in enumerate(items))
-    return f'<div class="donut"><svg viewBox="0 0 160 160" width="170" height="170">{"".join(o)}</svg><div class="dleg">{leg}</div></div>'
+    ind = "".join(f'<div class="lg ind"><i></i><span>{E(k)}</span><b>{eur(v/12)} €</b></div>' for k, v in CI.items())
+    ind = f'<p class="mut">Indicatif, hors note :</p>{ind}' if ind else ""
+    return f'<div class="donut"><svg viewBox="0 0 160 160" width="170" height="170">{"".join(o)}</svg><div class="dleg">{leg}{ind}</div></div>'
 
 def dep_bars():
     if not DEP: return '<p class="mut">Aucune dépense détectée.</p>'
     mx = max(x.get("max", 0) for x in DEP) * 1.1 or 1
-    o = [f'<div class="dr"><div class="drh"><span class="fn">{E(x["poste"])}<small>{E(x.get("source",""))}</small></span><span class="fp">{eur(x.get("min",0))}–{eur(x.get("max",0))} €</span></div><span class="track"><span class="rng" style="left:{x.get("min",0)/mx*100:.1f}%;width:{max(1,(x.get("max",0)-x.get("min",0))/mx*100):.1f}%"></span></span></div>' for x in DEP]
+    o = [f'<div class="dr"><div class="drh"><span class="fn">{E(x["poste"])}{' <span class="tag">à confirmer · hors budget</span>' if not x.get("certain", True) else ''}<small>{E(x.get("source",""))}</small></span><span class="fp">{eur(x.get("min",0))}–{eur(x.get("max",0))} €</span></div><span class="track"><span class="rng" style="left:{x.get("min",0)/mx*100:.1f}%;width:{max(1,(x.get("max",0)-x.get("min",0))/mx*100):.1f}%"></span></span></div>' for x in DEP]
     return "".join(o)
 
 def dvf_svg():
@@ -224,6 +233,15 @@ def tuiles():
     return '<div class="tiles">' + "".join(f'<div class="tile"><span class="ic" style="background:{NIV.get(x.get("niveau"),NIV["inconnu"])[0]}">{NIV.get(x.get("niveau"),NIV["inconnu"])[1]}</span><b>{E(x["nom"])}</b><small>{E(x.get("detail",""))}</small></div>' for x in xs) + '</div>'
 
 li = lambda xs: "".join(f"<li>{E(x)}</li>" for x in xs)
+QV = {"vendeur": "À demander au vendeur ou à l'agent", "sur place": "À vérifier sur place", "mairie": "À demander à la mairie", "notaire": "Documents à réclamer"}
+def questions():
+    qs = D.get("questions_visite") or []
+    if not qs: return '<p class="mut">Aucune question en suspens.</p>'
+    o = []
+    for k, titre in QV.items():
+        xs = [q for q in qs if q.get("ou", "vendeur") == k]
+        if xs: o.append(f'<div><h3>{titre}</h3>' + "".join(f'<label class="q"><input type="checkbox"><span><b>{E(q["question"])}</b><small>{E(q.get("pourquoi",""))}</small></span></label>' for q in xs) + '</div>')
+    return '<div class="g2">' + "".join(o) + '</div>'
 src = "".join(f'<li><a href="{E(u)}">{E(n)}</a></li>' for n, u in D.get("sources", []))
 bud_col = GOOD if budget <= 250000 else WARN if budget <= 300000 else SER if budget <= 335000 else CRIT
 mar_col = "var(--fg)" if ratio is None else GOOD if ratio <= 1 else "#c98500" if ratio <= 1.15 else CRIT
@@ -255,23 +273,26 @@ h2{{display:flex;align-items:center;gap:10px;font-size:18px;margin:0 0 16px;padd
 .facts{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}}.facts div,.mini{{background:var(--bg);border-radius:10px;padding:8px 12px;display:flex;flex-direction:column}}.facts b{{font-size:16px}}
 .minis{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}}.mini b{{font-size:20px}}
 .tiles{{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}}.tile{{background:var(--bg);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:4px}}.tile small{{font-size:12px}}
+.q{{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--bd);border-radius:10px;margin:6px 0;cursor:pointer}}.q input{{flex:none;margin-top:3px;width:18px;height:18px}}.q span{{display:flex;flex-direction:column}}.q small{{font-size:12px}}.q:has(input:checked){{opacity:.55}}
+.todo{{font-size:13px;color:#7a5a00;background:#fab2191f;border:1px dashed #fab219;border-radius:6px;padding:3px 8px}}.tag{{display:inline-block;font-size:11px;font-weight:600;color:#7a5a00;background:#fab21933;border-radius:6px;padding:1px 6px;margin-left:6px}}.lg.ind i{{background:var(--track)}}
 details{{margin-top:10px}}summary{{cursor:pointer;font-weight:700}}ul{{margin:8px 0;padding-left:20px}}a{{color:inherit}}
 @media (max-width:760px){{.hero,.g2{{grid-template-columns:1fr}}.kpis{{grid-template-columns:1fr 1fr}}.fr{{grid-template-columns:110px 1fr 56px 28px}}}}
 </style></head><body><main>
 <h1>{E(D.get('titre',''))}</h1><small>{E(D.get('adresse',''))} · {E(D.get('date',''))}</small>
-<section class="panel"><div class="hero"><div>{jauge(note, coul)}</div><div><span class="badge" style="background:{coul}">{ico} {lib}</span><p class="syn">{E(D.get('synthese',''))}</p></div></div>
+<section class="panel"><div class="hero"><div>{jauge(note, coul)}</div><div><span class="badge" style="background:{coul}">{ico} {lib}</span>{f' <span class="tag">note calculée sur {couverture} % des critères</span>' if couverture < 100 else ''}<p class="syn">{E(D.get('synthese',''))}</p></div></div>
 <div class="kpis">{kpi('Prix', eur(prix)+' €', f'{eur(pm2 or 0)} €/m²')}{kpi('Budget total', eur(budget)+' €', 'prix + travaux', bud_col)}{kpi('Coût mensuel', eur(cout_an/12)+' €', 'hors crédit')}{kpi('vs marché', f'{(ratio-1)*100:+.0f} %' if ratio else '—', f'médiane {eur(med or 0)} €/m²', mar_col)}</div></section>
 {sec(1, "Points d'attention", ff(D.get('points_attention', []), '!', SER), 'att')}
 {sec(2, "Forces et faiblesses", f'<div class="g2"><div><h3>Forces</h3>{ff(D.get("forces", []), "✓", GOOD)}</div><div><h3>Faiblesses</h3>{ff(D.get("faiblesses", []), "✗", CRIT)}</div></div>')}
-{sec(3, "Note par critère", facteurs())}
-{sec(4, "Trajets", f'<div class="g2"><div>{radial()}</div><div>{tr_table()}</div></div>')}
-{sec(5, "Argent", f'<h3>Budget vs plafond</h3>{budget_svg()}<div class="g2" style="margin-top:22px"><div><h3>Coûts mensuels</h3>{donut()}</div><div><h3>Dépenses à venir</h3>{dep_bars()}</div></div>')}
-{sec(6, "Prix du marché (DVF)", dvf_svg() + f'<p class="mut">{len(comps)} maisons comparables vendues sur 5 ans dans la commune.</p>')}
-{sec(7, "Maison et énergie", f'<div class="g2"><div><h3>Étiquette DPE</h3>{dpe_svg()}</div><div><h3>Caractéristiques</h3>{facts()}</div></div>')}
-{sec(8, "Environnement", f'<h3>Isolement</h3>{iso_svg()}<h3 style="margin-top:20px">Risques</h3>{tuiles()}<details><summary>Détail des risques</summary><ul>{li(D.get("risques", []))}</ul></details>')}
-{sec(9, "Location", f'<p>{E(loc.get("detail","Aucun logement ou local louable."))}</p><p><b>Net annuel prudent : {eur(loc.get("net_annuel",0))} €</b></p>') if loc.get('net_annuel') or loc.get('detail') else ''}
-{sec(10, "Ce que je n'ai PAS vérifié", f'<ul>{li(D.get("non_verifie", []))}</ul><details><summary>Hypothèses de calcul</summary><ul>{li(D.get("hypotheses", []))}</ul></details><details><summary>Sources</summary><ul>{src}</ul></details>')}
+{sec(3, "Questions pour la visite", questions())}
+{sec(4, "Note par critère", facteurs())}
+{sec(5, "Trajets", f'<div class="g2"><div>{radial()}</div><div>{tr_table()}</div></div>')}
+{sec(6, "Argent", f'<h3>Budget vs plafond</h3>{budget_svg()}<div class="g2" style="margin-top:22px"><div><h3>Coûts mensuels</h3>{donut()}</div><div><h3>Dépenses à venir</h3>{dep_bars()}</div></div>')}
+{sec(7, "Prix du marché (DVF)", dvf_svg() + f'<p class="mut">{len(comps)} maisons comparables vendues sur 5 ans dans la commune.</p>')}
+{sec(8, "Maison et énergie", f'<div class="g2"><div><h3>Étiquette DPE</h3>{dpe_svg()}</div><div><h3>Caractéristiques</h3>{facts()}</div></div>')}
+{sec(9, "Environnement", f'<h3>Isolement</h3>{iso_svg()}<h3 style="margin-top:20px">Risques</h3>{tuiles()}<details><summary>Détail des risques</summary><ul>{li(D.get("risques", []))}</ul></details>')}
+{sec(10, "Location", f'<p>{E(loc.get("detail","Aucun logement ou local louable."))}</p><p><b>Net annuel prudent : {eur(loc.get("net_annuel",0))} €</b></p>') if loc.get('net_annuel') or loc.get('detail') else ''}
+{sec(11, "Ce que je n'ai PAS vérifié", f'<ul>{li(D.get("non_verifie", []))}</ul><details><summary>Hypothèses de calcul</summary><ul>{li(D.get("hypotheses", []))}</ul></details><details><summary>Sources</summary><ul>{src}</ul></details>')}
 </main></body></html>"""
 open(sys.argv[2], "w", encoding="utf-8").write(page)
 print(json.dumps({"note": note, "verdict": lib, "budget_total": round(budget), "cout_mensuel": round(cout_an / 12),
-                  "prix_m2": round(pm2 or 0), "mediane_dvf": round(med or 0), "nb_comparables": len(comps)}, ensure_ascii=False))
+                  "prix_m2": round(pm2 or 0), "mediane_dvf": round(med or 0), "nb_comparables": len(comps), "criteres_notes_pct": couverture, "a_determiner": [n for n, p, s, d in F if s is None]}, ensure_ascii=False))
