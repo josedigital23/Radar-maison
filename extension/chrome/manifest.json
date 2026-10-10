@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Radar Maison",
+  "version": "1.15",
+  "description": "Retrouve l'adresse exacte d'un bien immobilier à partir de son annonce, via la base DPE de l'ADEME.",
+  "permissions": [
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://data.ademe.fr/*",
+    "https://api-adresse.data.gouv.fr/*",
+    "https://files.data.gouv.fr/*",
+    "https://*.data.gouv.fr/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "compat.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Radar Maison — retrouver l'adresse",
+    "default_icon": {
+      "16": "icones/16.png",
+      "32": "icones/32.png",
+      "48": "icones/48.png",
+      "128": "icones/128.png"
+    }
+  },
+  "icons": {
+    "16": "icones/16.png",
+    "32": "icones/32.png",
+    "48": "icones/48.png",
+    "128": "icones/128.png"
+  }
+}

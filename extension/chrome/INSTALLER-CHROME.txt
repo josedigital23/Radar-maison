@@ -1,0 +1,148 @@
+﻿RADAR MAISON — Extension Chrome pour Windows
+=============================================
+
+Radar Maison retrouve l'adresse exacte d'une maison à partir de son annonce
+(Leboncoin, SeLoger, sites d'agence…), en croisant les informations du DPE
+avec la base publique de l'ADEME. Il affiche aussi les prix de vente réels
+des maisons autour (base DVF).
+
+
+-------------------------------------------------------------------
+1. INSTALLER (5 minutes, une seule fois)
+-------------------------------------------------------------------
+
+ÉTAPE 1 — Ranger le dossier au bon endroit
+
+  - Clic droit sur le fichier « radar-maison-chrome.zip » > « Extraire tout… »
+  - Dans la fenêtre, clique sur « Parcourir », choisis ton dossier
+    « Documents », puis « Extraire ».
+
+  IMPORTANT : ne supprime pas, ne déplace pas et ne renomme pas ce dossier
+  après l'installation. Chrome lit l'extension directement dedans : si le
+  dossier disparaît, l'extension disparaît aussi.
+
+ÉTAPE 2 — Ouvrir la page des extensions de Chrome
+
+  - Ouvre Chrome.
+  - Dans la barre d'adresse, tape :  chrome://extensions
+    puis appuie sur Entrée.
+
+ÉTAPE 3 — Activer le mode développeur
+
+  - En haut à droite de la page, active l'interrupteur « Mode développeur ».
+  - Une nouvelle barre de boutons apparaît en haut à gauche.
+
+ÉTAPE 4 — Charger l'extension
+
+  - Clique sur « Charger l'extension non empaquetée »
+    (selon la version de Chrome : « Charger le contenu décompressé »).
+  - Va dans Documents > radar-maison-chrome.
+
+  PIÈGE WINDOWS : « Extraire tout » crée souvent DEUX dossiers emboîtés :
+      Documents\radar-maison-chrome\radar-maison-chrome
+  Il faut sélectionner le dossier qui contient directement le fichier
+  « manifest » (avec les fichiers « content », « background » et le dossier
+  « icones »). Si tu ne vois qu'un autre dossier « radar-maison-chrome »,
+  entre dedans.
+
+  - Clique sur « Sélectionner un dossier ».
+
+  La carte « Radar Maison » apparaît dans la liste des extensions. C'est installé.
+
+ÉTAPE 5 — Épingler l'icône (conseillé)
+
+  - À droite de la barre d'adresse, clique sur la pièce de puzzle.
+  - Clique sur l'épingle à côté de « Radar Maison ».
+  - L'icône (un radar bleu nuit avec un point rouge) reste visible en permanence.
+
+ÉTAPE 6 — Vérifier que ça tient
+
+  - Ferme complètement Chrome, puis rouvre-le.
+  - L'icône Radar Maison doit toujours être là.
+  - Si c'est le cas : plus rien à faire, l'extension reste installée.
+
+
+-------------------------------------------------------------------
+2. UTILISER
+-------------------------------------------------------------------
+
+  1. Ouvre une annonce de maison (Leboncoin, SeLoger, PAP, site d'agence…).
+
+  2. Sur SeLoger : clique d'abord sur l'encart DPE pour l'ouvrir.
+     Tant qu'il est fermé, ses informations sont invisibles pour l'extension.
+
+  3. Une pastille « Trouver l'adresse » apparaît en bas à droite de la page.
+     Clique dessus. (L'icône Radar Maison en haut à droite fait la même chose.)
+
+  4. Un panneau s'ouvre à droite et lance la recherche tout seul.
+     En haut : ce que l'extension a lu dans l'annonce (surface, consommation,
+     date du diagnostic…). Si une valeur est fausse, corrige-la :
+     la recherche repart automatiquement.
+
+  5. En dessous : les adresses candidates, la plus probable en premier.
+     Clique sur une fiche pour voir la vue aérienne, Street View, le cadastre
+     et les prix de vente réels des maisons voisines.
+
+  La pastille n'apparaît que sur les pages qui ressemblent à une annonce.
+  Ailleurs, l'extension reste invisible.
+
+  L'information la plus fiable est la « date de réalisation du diagnostic »
+  (souvent dans le bloc DPE de l'annonce). Quand elle est présente, le bon
+  résultat sort presque toujours en tête. Si l'extension ne l'a pas lue mais
+  que tu la trouves dans l'annonce, saisis-la dans le champ « Date du DPE ».
+
+
+-------------------------------------------------------------------
+3. SI ÇA NE TROUVE RIEN
+-------------------------------------------------------------------
+
+  - Clique sur « Élargir les critères ».
+  - Change la commune : les petites étiquettes sous le champ « Commune »
+    reprennent tous les lieux cités dans l'annonce. Les agences affichent
+    souvent une ville connue à la place de la vraie commune.
+  - Agrandis le « Rayon ».
+  - DPE réalisé avant juillet 2021 : une adresse sur deux manque dans la
+    base publique. C'est une limite des données, pas un bug.
+
+
+-------------------------------------------------------------------
+4. PROBLÈMES FRÉQUENTS
+-------------------------------------------------------------------
+
+  Message « manifeste introuvable » (ou similaire) à l'étape 4
+     -> Tu as sélectionné le mauvais dossier. Voir le PIÈGE WINDOWS.
+
+  Un message au démarrage de Chrome parle d'extensions en mode développeur
+     -> Ne clique pas sur « Désactiver ». Ferme simplement le message.
+
+  L'extension a disparu
+     -> Le dossier a sans doute été déplacé ou supprimé. Refais l'étape 4.
+
+  La pastille n'apparaît pas sur une annonce
+     -> Recharge la page (touche F5). Sinon, clique sur l'icône Radar Maison
+        en haut à droite : le panneau s'ouvre quand même.
+
+
+-------------------------------------------------------------------
+5. METTRE À JOUR (quand tu reçois une nouvelle version)
+-------------------------------------------------------------------
+
+  1. Remplace le contenu du dossier Documents\radar-maison-chrome
+     par celui du nouveau zip.
+  2. Va sur chrome://extensions
+  3. Sur la carte « Radar Maison », clique sur la flèche circulaire (actualiser).
+  4. Recharge la page de l'annonce (F5).
+
+
+-------------------------------------------------------------------
+6. DÉSINSTALLER
+-------------------------------------------------------------------
+
+  chrome://extensions > carte « Radar Maison » > « Supprimer ».
+  Tu peux ensuite effacer le dossier dans Documents.
+
+
+-------------------------------------------------------------------
+Données utilisées : DPE de l'ADEME, Base Adresse Nationale, DVF (prix de
+vente réels), toutes publiques. L'extension lit uniquement la page affichée
+et interroge ces bases. Aucune donnée personnelle n'est envoyée ailleurs.
