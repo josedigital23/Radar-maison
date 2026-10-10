@@ -525,153 +525,7 @@
     cout:null, conso:x.consommation_energie, construction:x.annee_construction, chauffage:"",
     date:x.date_etablissement_dpe, visite:null, lat:x.latitude, lon:x.longitude, fiab:x.geo_score, id:x.numero_dpe });
 
-  /* ---------- DVF : le prix réellement payé ---------- */
-  const DVF = "https://files.data.gouv.fr/geo-dvf/latest/csv";
-
-  // Petit lecteur de CSV : gère les champs entre guillemets, suffisant pour DVF.
-  function csv(txt){
-    const li = txt.replace(/\r/g, "").split("\n").filter(l => l.trim());   // sans ça, la dernière colonne s'appelle "latitude\r"
-    if(li.length < 2) return [];
-    const cols = li[0].split(",");
-    return li.slice(1).map(l => {
-      const v = []; let cur = "", guil = false;
-      for(const c of l){
-        if(c === '"') guil = !guil;
-        else if(c === "," && !guil){ v.push(cur); cur = ""; }
-        else cur += c;
-      }
-      v.push(cur);
-      const o = {};
-      cols.forEach((c,i) => o[c] = v[i]);
-      return o;
-    });
-  }
-
-  async function ventes(insee, dept){
-    const an = new Date().getFullYear();
-    const annees = [an-1, an-2, an-3, an-4, an-5];   // le millésime de l'année en cours n'existe pas encore
-    const reps = await Promise.all(annees.map(a =>
-      req(`${DVF}/${a}/communes/${dept}/${insee}.csv`, "texte")
-    ));
-
-    const vues = new Set(), out = [], journal = [];
-    reps.forEach((r, i) => {
-      const a = annees[i];
-      if(!r || !r.texte){ journal.push(`${a} : ${r && r.erreur ? r.erreur : "pas de réponse"}`); return; }
-      const li = csv(r.texte);
-      let maisons = 0;
-      li.forEach(x => {
-        if(x.type_local !== "Maison") return;
-        maisons++;
-        if(!x.latitude || !x.longitude || !x.valeur_fonciere) return;
-        if(vues.has(x.id_mutation)) return;          // une mutation = plusieurs lignes (lots, parcelles)
-        const prix = parseFloat(x.valeur_fonciere), bati = parseFloat(x.surface_reelle_bati) || null;
-        if(prix < 12000) return;                     // ventes symboliques, parts indivises, ruines
-        if(bati && bati < 25) return;                // garages, granges, dépendances déclarées « maison »
-        vues.add(x.id_mutation);
-        out.push({
-          date: x.date_mutation,
-          prix, bati,
-          terrain: parseFloat(x.surface_terrain) || 0,
-          voie: (x.adresse_numero ? x.adresse_numero + " " : "") + (x.adresse_nom_voie || ""),
-          lat: parseFloat(x.latitude), lon: parseFloat(x.longitude)
-        });
-      });
-      journal.push(`${a} : ${li.length} ligne${li.length>1?"s":""}, dont ${maisons} maison${maisons>1?"s":""}`);
-    });
-    return { liste: out, journal, url: `${DVF}/${an-2}/communes/${dept}/${insee}.csv` };
-  }
-
-  function mediane(t){
-    if(!t.length) return null;
-    const s = [...t].sort((a,b) => a-b), m = Math.floor(s.length/2);
-    return s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2;
-  }
-
-  /* ---------- écran 2 : la fiche du bien ---------- */
-  async function ficheBien(x, prixAnnonce, S, $){
-    $("ecran1").style.display = "none";
-    $("ecran2").style.display = "block";
-    $("ecran2").innerHTML = `
-      <button class="retour" id="retour">‹ Retour aux candidats</button>
-      <div class="bloc">
-        <p class="adr">${x.adresse || "Adresse non géocodée"}</p>
-        <div class="meta">${[x.commune, x.cp].filter(Boolean).join(" · ")} — DPE ${x.source}</div>
-        <div class="kv" style="margin-top:10px">
-          <span><b>Surface</b> ${x.surface != null ? x.surface + " m²" : "—"}</span>
-          <span><b>DPE</b> ${x.dpe}/${x.ges2}</span>
-          <span><b>Conso</b> ${x.conso != null ? Math.round(x.conso) + " kWh/m²" : "—"}</span>
-          ${x.cout!=null?`<span><b>Facture</b> ${Math.round(x.cout)} €/an</span>`:""}
-          ${x.chauffage?`<span><b>Chauffage</b> ${x.chauffage}</span>`:""}
-          <span><b>Construction</b> ${x.construction||"—"}</span>
-        </div>
-        <div class="kv" style="margin-top:6px">
-          <span><b>Visite du diagnostiqueur</b> ${x.visite || "non renseignée"}</span>
-          <span><b>DPE établi le</b> ${x.date || "—"}</span>
-          ${(x.visite && x.date) ? `<span><b>Délai</b> J+${Math.round((new Date(x.date) - new Date(x.visite)) / 86400000)}</span>` : ""}
-        </div>
-        <div class="liens" style="margin-top:10px">
-          <a href="https://www.google.com/maps/@${x.lat},${x.lon},130m/data=!3m1!1e3" target="_blank" rel="noopener">Vue aérienne ↗</a>
-          <a href="https://www.google.com/maps?q&layer=c&cbll=${x.lat},${x.lon}" target="_blank" rel="noopener">Street View ↗</a>
-          <a href="https://www.geoportail.gouv.fr/carte?c=${x.lon},${x.lat}&z=18&l0=CADASTRALPARCELS.PARCELLAIRE_EXPRESS::GEOPORTAIL:OGC:WMTS(1)" target="_blank" rel="noopener">Cadastre ↗</a>
-        </div>
-      </div>
-      <div class="bloc" id="dvf"><h2>Le prix, pour de vrai</h2><div class="statut">Lecture des actes notariés…</div></div>
-      <div class="bloc futur"><h2>Les risques</h2><div class="note">Géorisques — pas encore branché.</div></div>
-      <div class="bloc futur"><h2>L'urbanisme</h2><div class="note">PLU — pas encore branché.</div></div>`;
-
-    $("retour").onclick = () => { $("ecran2").style.display = "none"; $("ecran1").style.display = "block"; };
-
-    // Le code INSEE des bases DPE n'est pas fiable (l'ancienne y met parfois un code postal).
-    // On le redemande à la BAN à partir de l'adresse : c'est elle qui fait autorité.
-    let insee = /^\d{5}$/.test(x.insee || "") ? x.insee : null;
-    if(x.adresse){
-      const r = await req(`${BAN}?q=${encodeURIComponent(x.adresse)}&limit=1`);
-      const f = r && r.data && r.data.features && r.data.features[0];
-      if(f && f.properties.citycode) insee = f.properties.citycode;
-    }
-    if(!insee){ $("dvf").innerHTML = `<h2>Le prix, pour de vrai</h2><div class="note">Commune introuvable : impossible d'aller chercher les ventes.</div>`; return; }
-    const dept = insee.slice(0,2);
-
-    const rep = await ventes(insee, dept);
-    const v = rep.liste;
-    const surf = x.surface;
-
-    const autour = v.map(m => ({...m, d: km(x.lat, x.lon, m.lat, m.lon) * 1000}))
-                    .sort((a,b) => a.d - b.d);
-    const ici    = autour.filter(m => m.d <= 40);                       // la maison elle-même
-    const dix    = autour.filter(m => m.d > 40).slice(0, 10);           // les 10 voisines les plus proches
-
-    const comparables = autour.filter(m => m.bati && Math.abs(m.bati - surf) <= surf * 0.4 && m.d <= 3000);
-    const med = mediane(comparables.map(m => m.prix / m.bati));
-
-    const euro = n => n.toLocaleString("fr-FR", {maximumFractionDigits:0});
-    const ligne = m => `<div class="vente">
-      <div><b>${euro(m.prix)} €</b>${m.bati?` · ${euro(m.prix/m.bati)} €/m²`:""}</div>
-      <div class="det">${m.bati?`${m.bati} m² bâti`:"bâti inconnu"} · terrain ${euro(m.terrain)} m² · ${m.date} · à ${m.d < 1000 ? Math.round(m.d)+" m" : (m.d/1000).toFixed(1)+" km"}</div>
-      <div class="det">${m.voie || "adresse non précisée"}</div>
-    </div>`;
-
-    const pm2 = (prixAnnonce && surf) ? prixAnnonce / surf : null;
-
-    $("dvf").innerHTML = `<h2>Le prix, pour de vrai</h2>
-      <div class="sous">Cette maison</div>
-      ${ici.length ? ici.map(ligne).join("")
-                   : `<div class="note">Aucune vente retrouvée à cette adresse depuis ${new Date().getFullYear()-5}. Attention : DVF géolocalise à la parcelle — une vente peut exister sans qu'on la retrouve ici.</div>`}
-      <div class="sous">Les maisons vendues autour</div>
-      ${dix.length ? dix.map(ligne).join("") : `<div class="note">Aucune maison vendue dans la commune sur 5 ans.</div>`}
-      ${med ? `<div class="repere">
-          <div>Médiane des maisons de ${Math.round(surf*0.6)} à ${Math.round(surf*1.4)} m² — <b>${euro(med)} €/m²</b> <span class="det">(sur ${comparables.length} vente${comparables.length>1?"s":""})</span></div>
-          ${pm2 ? `<div style="margin-top:5px">Ce bien : <b>${euro(prixAnnonce)} €</b> pour ${surf} m² → <b>${euro(pm2)} €/m²</b>
-            <span class="${pm2 <= med ? "ok" : "cher"}">${pm2 <= med ? "sous la médiane" : "au-dessus de la médiane"}</span></div>` : ""}
-        </div>` : `<div class="note">Trop peu de ventes comparables pour calculer une médiane honnête.</div>`}
-      <div class="note">⚠️ Le prix DVF couvre la <b>vente entière</b>, terrain et dépendances compris. Un prix au m² élevé cache souvent des hectares de pré. Lis-le toujours avec les surfaces.</div>
-      <details style="margin-top:8px">
-        <summary style="font-size:11px;color:#5C6E7E;cursor:pointer">Ce que les fichiers DVF ont répondu (commune ${insee})</summary>
-        <pre style="background:#fff;border:1px solid #BFCBD4;padding:8px;font-size:10.5px;white-space:pre-wrap;margin-top:6px">${rep.journal.join("\n")}</pre>
-        <div class="det" style="word-break:break-all">${rep.url}</div>
-      </details>`;
-  }
+  /* L'écran 2 (le rapport détaillé) et la collecte vivent dans rapport.js et moteur/ : un seul code pour l'extension et les tests. */
 
   /* ---------- panneau ---------- */
   function ouvrirPanneau(){
@@ -685,100 +539,51 @@
   document.documentElement.appendChild(hote);
   const S = hote.attachShadow({ mode:"open" });
 
-  S.innerHTML = `<style>
-    :host{all:initial}
-    *{box-sizing:border-box;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-    .panneau{height:100vh;overflow-y:auto;background:#E9EEF1;border-left:2px solid #152535;color:#152535;font-size:14px;line-height:1.5;padding:16px 18px 40px;
-      background-image:linear-gradient(#BFCBD4 .5px,transparent .5px),linear-gradient(90deg,#BFCBD4 .5px,transparent .5px);background-size:24px 24px}
-    .titre{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #152535;padding-bottom:8px;margin-bottom:14px}
-    .titre h1{font-family:ui-serif,Georgia,serif;font-size:21px;margin:0;font-weight:600}
-    .fermer{border:0;background:none;font-size:22px;cursor:pointer;color:#5C6E7E;line-height:1}
-    .bloc{background:#F6F8F9;border:1px solid #BFCBD4;padding:12px;margin-bottom:12px}
-    .bloc h2{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#5C6E7E;margin:0 0 10px;font-weight:600}
-    .grille{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-    label{display:block;font-size:11px;color:#5C6E7E;margin-bottom:3px}
-    input,select{width:100%;padding:6px 7px;border:1px solid #BFCBD4;background:#fff;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#152535}
-    .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-    .chip{font-family:ui-monospace,Menlo,monospace;font-size:11px;padding:3px 7px;border:1px solid #BFCBD4;background:#fff;cursor:pointer}
-    .chip.actif{background:#152535;color:#F6F8F9}
-    button.go{width:100%;margin-top:10px;padding:9px;border:1px solid #152535;background:#152535;color:#F6F8F9;font-weight:600;font-size:13px;cursor:pointer}
-    button.plus{width:100%;margin-top:6px;padding:7px;border:1px solid #152535;background:transparent;color:#152535;font-size:12px;cursor:pointer}
-    .statut{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#5C6E7E;margin-top:8px;min-height:14px}
-    .fiche{background:#fff;border:1px solid #BFCBD4;border-left:4px solid #BFCBD4;padding:12px;margin-bottom:9px;cursor:pointer}
-    .fiche:hover{border-color:#152535}
-    .ouvrir{margin-top:9px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#B4351F;letter-spacing:.06em;text-transform:uppercase}
-    .retour{all:initial;cursor:pointer;font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#5C6E7E;margin-bottom:12px;display:block}
-    .retour:hover{color:#152535}
-    .sous{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#5C6E7E;margin:12px 0 7px;font-weight:600;border-bottom:1px solid #BFCBD4;padding-bottom:3px}
-    .vente{background:#fff;border:1px solid #BFCBD4;padding:9px 10px;margin-bottom:6px;font-size:13px}
-    .vente b{font-family:ui-monospace,Menlo,monospace}
-    .det{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#5C6E7E;margin-top:2px}
-    .repere{background:#F0D9D3;border-left:3px solid #B4351F;padding:10px;margin-top:10px;font-size:13px}
-    .repere b{font-family:ui-monospace,Menlo,monospace}
-    .indices{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
-    .ind{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border:1px solid #1F6B4A;color:#1F6B4A;background:#fff}
-    .ok{color:#1F6B4A;font-weight:600;font-size:11.5px;margin-left:5px}
-    .cher{color:#B4351F;font-weight:600;font-size:11.5px;margin-left:5px}
-    .bloc.futur{opacity:.5}
-    .fiche.top{border-left-color:#B4351F;background:linear-gradient(90deg,#F0D9D3 0%,#fff 60%)}
-    .fiche.loin{opacity:.6}
-    .adr{font-family:ui-serif,Georgia,serif;font-size:16px;font-weight:600;margin:0 0 3px}
-    .meta{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:#5C6E7E;text-transform:uppercase;letter-spacing:.06em}
-    .dist{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;padding:1px 6px;border:1px solid #1F6B4A;color:#1F6B4A;margin-top:6px}
-    .dist.loin{border-color:#B4351F;color:#B4351F}
-    .score{float:right;font-family:ui-monospace,Menlo,monospace;font-size:20px;font-weight:600;color:#B4351F}
-    .kv{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:9px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px}
-    .kv b{color:#5C6E7E;font-weight:600}
-    .liens{margin-top:9px;display:flex;gap:10px;flex-wrap:wrap}
-    .liens a{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#152535;border-bottom:1px solid #BFCBD4;text-decoration:none}
-    .vide{background:#F6F8F9;border:1px dashed #BFCBD4;padding:14px;font-size:13px}
-    .note{font-size:11.5px;color:#5C6E7E;margin-top:10px;line-height:1.4}
-  </style>
-  <div class="panneau">
-    <div class="titre"><h1>Radar Maison</h1><button class="fermer" id="x">×</button></div>
-    <div id="ecran1">
-    <div class="bloc">
-      <details id="crit" open>
-      <summary style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#5C6E7E;cursor:pointer;font-weight:600;margin-bottom:10px">Ce que j'ai lu sur la page — corrigeable</summary>
-      <div class="grille">
-        <div><label>Type</label><select id="type"><option value="maison">Maison</option><option value="appartement">Appartement</option></select></div>
-        <div><label>Surface (m²)</label><input id="surface"><div class="chips" id="chips-surf"></div></div>
-        <div><label>Conso (kWh/m²/an)</label><input id="conso"></div>
-        <div><label>Indice GES (kg CO₂)</label><input id="ges"></div>
-        <div><label>Étiq. énergie (A→G)</label><input id="etiqDpe" maxlength="1" placeholder="C"></div>
-        <div><label>Étiq. climat (A→G)</label><input id="etiqGes" maxlength="1" placeholder="C"></div>
-        <div><label>Date du DPE</label><input id="dateDpe" placeholder="2025-07-12"></div>
-        <div><label>Année</label><input id="annee"></div>
-        <div><label>Facture min (€)</label><input id="coutmin"></div>
-        <div><label>Facture max (€)</label><input id="coutmax"></div>
+  RadarUI.police();
+  S.innerHTML = `<style>${RadarUI.css}</style>
+  <div class="panneau" id="zone">
+    <div class="entete"><div class="ligne">
+      <span class="marque"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3FD0DA" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4.5"></circle><path d="M12 12 L18 6"></path></svg>Radar Maison</span>
+      <button class="ico" id="x" aria-label="Fermer">${RadarUI.SVG.fermer}</button>
+    </div></div>
+    <div id="ecran1" class="corps">
+      <div class="carte pile">
+        <div><label class="etiq" for="commune">Commune</label><input id="commune"><div class="chips petites" id="chips" style="margin-top:8px"></div></div>
+        <div><span class="etiq">Interprétation</span>
+          <div class="seg" id="seg-geo">
+            <button data-v="verrouillé">Dans la ville</button><button data-v="centre">Autour</button><button data-v="exclu">Autour, pas dedans</button>
+          </div><input type="hidden" id="geoMode" value="centre"></div>
+        <div><span class="etiq">Rayon</span>
+          <div class="chips" id="chips-rayon">
+            <button class="chip" data-v="5">5 km</button><button class="chip" data-v="10">10 km</button><button class="chip on" data-v="15">15 km</button><button class="chip" data-v="25">25 km</button><button class="chip" data-v="40">40 km</button><button class="chip" data-v="999">Dépt</button>
+          </div><input type="hidden" id="rayon" value="15"></div>
+        <button class="bouton contour" id="plus"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9 V4 H9 M20 9 V4 H15 M4 15 V20 H9 M20 15 V20 H15"></path></svg>Élargir les critères</button>
+        <div class="sep">
+          <button class="replier" id="tog-crit" aria-expanded="false"><span>Caractéristiques retenues</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6 L15 12 L9 18"></path></svg></button>
+          <div id="crit" style="display:none;flex-direction:column;gap:10px;padding-bottom:4px">
+            <div class="grille2">
+              <div><label class="etiq" for="type">Type</label><select id="type" style="height:40px;font-size:14px;padding:0 8px"><option value="maison">Maison</option><option value="appartement">Appartement</option></select></div>
+              <div><label class="etiq" for="surface">Surface (m²)</label><input id="surface"></div>
+              <div><label class="etiq" for="conso">Conso (kWh/m²)</label><input id="conso"></div>
+              <div><label class="etiq" for="ges">GES (kg CO₂/m²)</label><input id="ges"></div>
+              <div><label class="etiq" for="etiqDpe">Étiquette énergie</label><input id="etiqDpe" maxlength="1" placeholder="A→G"></div>
+              <div><label class="etiq" for="etiqGes">Étiquette climat</label><input id="etiqGes" maxlength="1" placeholder="A→G"></div>
+              <div><label class="etiq" for="dateDpe">Date du DPE</label><input id="dateDpe" placeholder="2025-07-12"></div>
+              <div><label class="etiq" for="annee">Année</label><input id="annee"></div>
+              <div><label class="etiq" for="coutmin">Facture min (€)</label><input id="coutmin"></div>
+              <div><label class="etiq" for="coutmax">Facture max (€)</label><input id="coutmax"></div>
+            </div>
+            <div class="chips petites" id="chips-surf"></div>
+            <button class="bouton doux" id="relire" style="height:40px;font-size:13px">Relire la page</button>
+            <button class="bouton" id="go" style="display:none;height:40px;font-size:13px">Relancer</button>
+          </div>
+        </div>
+        <div class="statut" id="statut"></div>
       </div>
-      <div style="margin-top:9px"><label>Commune (centre de recherche)</label><input id="commune"></div>
-      <div class="chips" id="chips"></div>
-      <div style="margin-top:9px"><label>Interprétation de l'annonce</label>
-        <select id="geoMode">
-          <option value="centre">Autour de cette ville (centré)</option>
-          <option value="verrouillé">Dans cette ville (« sur la commune de »)</option>
-          <option value="exclu">Autour, mais PAS cette ville (« proche de », « à 10 min de »)</option>
-        </select>
-        <div class="note" id="geoNote" style="margin-top:4px"></div>
-      </div>
-      <div style="margin-top:9px"><label>Rayon</label>
-        <select id="rayon"><option value="5">5 km</option><option value="10">10 km</option>
-        <option value="15" selected>15 km</option><option value="25">25 km</option>
-        <option value="40">40 km</option><option value="999">Tout le département</option></select></div>
-      <button class="go" id="go" style="display:none">Relancer avec ces critères</button>
-      <button class="plus" id="relire">Relire la page (si tu viens d'ouvrir l'encart DPE)</button>
-      <button class="plus" id="plus">Élargir les critères</button>
-      </details>
-      <div class="statut" id="statut"></div>
-      <details style="margin-top:8px">
-        <summary style="font-size:11px;color:#5C6E7E;cursor:pointer">Voir le texte que j'ai lu</summary>
-        <pre id="brut" style="max-height:180px;overflow:auto;background:#fff;border:1px solid #BFCBD4;padding:8px;font-size:10.5px;white-space:pre-wrap;margin-top:6px"></pre>
-      </details>
+      <div id="res" class="pile"></div>
+      <pre id="brut" style="display:none"></pre>
     </div>
-    <div id="res"></div>
-    </div>
-    <div id="ecran2" style="display:none"></div>
+    <div id="ecran2" style="display:none;flex:1;flex-direction:column"></div>
   </div>`;
 
   const $ = id => S.getElementById(id);
@@ -794,15 +599,14 @@
   ["surface","conso","ges","etiqDpe","etiqGes","dateDpe","annee","coutmin","coutmax","commune"].forEach(k => { if(v[k]!=null) $(k).value = v[k]; });
   $("type").value = v.type;
 
-  // Interprétation géographique : pré-remplie par la lecture, corrigeable à la main.
-  $("geoMode").value = v.geoMode || "centre";
-  const geoNotes = {
-    "verrouillé": "L'annonce situe le bien DANS cette commune → recherche resserrée sur la ville (4 km).",
-    "exclu":      "L'annonce dit « autour de » cette ville, pas dedans → on cherche aux alentours et on écarte la ville elle-même.",
-    "centre":     "Aucune tournure claire : la ville sert de simple centre de recherche."
-  };
-  $("geoNote").textContent = geoNotes[$("geoMode").value];
-  $("geoMode").onchange = () => { $("geoNote").textContent = geoNotes[$("geoMode").value]; };
+  // Interprétation géographique : pré-remplie par la lecture, corrigeable d'un clic.
+  const poserGeo = val => { $("geoMode").value = val; $("seg-geo").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === val)); };
+  poserGeo(v.geoMode || "centre");
+  $("seg-geo").onclick = e => { const b = e.target.closest("button"); if(!b) return; poserGeo(b.dataset.v); chercher(0); };
+  $("chips-rayon").onclick = e => { const b = e.target.closest("button"); if(!b) return;
+    $("rayon").value = b.dataset.v; $("chips-rayon").querySelectorAll(".chip").forEach(o => o.classList.toggle("on", o === b)); chercher(0); };
+  const ouvrirCrit = ouvert => { $("crit").style.display = ouvert ? "flex" : "none"; $("tog-crit").classList.toggle("ouvert", ouvert); $("tog-crit").setAttribute("aria-expanded", ouvert); };
+  $("tog-crit").onclick = () => ouvrirCrit($("crit").style.display === "none");
 
   if(v.surfaces && v.surfaces.length > 1){
     $("chips-surf").innerHTML = v.surfaces.slice(0,5)
@@ -816,9 +620,9 @@
 
   if(v.lieux.length > 1){
     $("chips").innerHTML = v.lieux.map(l => `<button class="chip${l===v.commune?" actif":""}">${l}</button>`).join("");
-    S.querySelectorAll(".chip").forEach(b => b.onclick = () => {
+    $("chips").querySelectorAll(".chip").forEach(b => b.onclick = () => {
       $("commune").value = b.textContent;
-      S.querySelectorAll(".chip").forEach(o => o.classList.remove("actif"));
+      $("chips").querySelectorAll(".chip").forEach(o => o.classList.remove("actif"));
       b.classList.add("actif");
     });
   }
@@ -879,9 +683,9 @@
     const uB = rB_ ? rB_.url : null;
 
     const uV = urlVieux(c, centre.dept, marge);
-    if(!uN && !uV){ $("statut").textContent = "Rien à quoi se raccrocher. Il faut au moins la date du diagnostic — ou, à défaut, la conso, le GES, la facture ou la surface."; $("go").disabled = false; return; }
+    if(!uN && !uV){ $("statut").textContent = "Il faut au moins la date du DPE, la conso ou la surface."; ouvrirCrit(true); $("go").disabled = false; return; }
 
-    $("statut").textContent = "Interrogation de l'ADEME…";
+    $("statut").textContent = "Recherche…";
     /* Combien de pages ? Ça dépend de l'étendue de la requête.
        - Mode conso sans borne : la requête couvre la France entière. Une page, pour la curiosité.
        - Tout le reste est borné (département ou cadre) : on moissonne jusqu'au bout. */
@@ -926,45 +730,30 @@
     res = res.filter(x => x.adresse && x.lat && x.lon);
     const muets = avant - res.length;
 
-    /* Le mouchard. Il doit s'afficher AUSSI — et surtout — quand on ne trouve rien : c'est
-       précisément là qu'on a besoin de savoir si la base a répondu, si elle a été tronquée,
-       ou si elle n'avait simplement rien à dire. */
-    const mouchard = () => {
+    /* Le mouchard, réduit à l'essentiel : rien quand tout va bien, une alerte quand la base a été coupée
+       (la leçon de Changy : la bonne maison peut être dans ce qui n'a pas été lu) ou quand le cadre a échoué.
+       Le détail chiffré reste au survol. */
+    const alertes = () => {
       if(!compte) return "";
-      const national = (mode === "conso");   // seule la requête large de ce mode ignore les bornes
-      const l = (nom, x, borne) => {
-        if(!x) return `${nom} : pas de requête`;
-        if(x.erreur) return `${nom} : ✗ ${x.erreur}`;
-        const manque = x.total - x.recus;
-        return `${nom} : ${x.total} DPE dans la base, ${x.recus} rapatriés`
-          + (x.pages > 1 ? ` (${x.pages} pages)` : "")
-          + (manque > 0 ? (borne ? `  — ${manque} non lus, hors sujet` : `  ← IL EN MANQUE ${manque}`) : "  ✓ complet");
-      };
+      const national = (mode === "conso");
       const trou = (compte.national && !national && compte.national.total > compte.national.recus)
                 || ["local","boite","vieux"].some(k => compte[k] && !compte[k].erreur && compte[k].total > compte[k].recus);
       const bboxKo = compte.boite && compte.boite.erreur;
-      return `<details style="margin-top:8px">
-        <summary style="font-size:11px;color:#5C6E7E;cursor:pointer">Ce que l'ADEME avait, ce qu'elle a servi${(trou||bboxKo) ? " ⚠️" : ""}</summary>
-        <pre style="background:#fff;border:1px solid #BFCBD4;padding:8px;font-size:10.5px;white-space:pre-wrap;margin-top:6px">${
-          [ l(national ? "France entière" : "Département " + centre.dept, compte.national, national),
-            compte.local ? l("Département " + centre.dept, compte.local, false) : "",
-            compte.boite ? l(`Cadre de ${compte.rayon} km`, compte.boite, false) : "",
-            compte.vieux ? l("Base avant 2021", compte.vieux, false) : "",
-            muets ? `\n${muets} DPE écarté${muets>1?"s":""} : présent${muets>1?"s":""} dans la base, mais sans adresse géocodée.` : ""
-          ].filter(Boolean).join("\n")
-        }</pre>
-        ${bboxKo ? `<div class="note">La recherche par cadre géographique a échoué — l'API refuse la syntaxe. On retombe sur le département seul, comme avant. Rien n'est cassé, mais dis-le-moi.</div>` : ""}
-        ${trou ? `<div class="note">⚠️ Une requête bornée a été coupée : la bonne maison peut être dans ce qui n'a pas été lu. Réduis le rayon, ou préviens-moi.</div>` : ""}
-      </details>`;
+      const detail = [["national", national ? "France" : "Département"], ["local", "Département"], ["boite", `Cadre ${compte.rayon} km`], ["vieux", "Avant 2021"]]
+        .filter(([k]) => compte[k]).map(([k, n]) => `${n} : ${compte[k].erreur ? "échec" : compte[k].recus + "/" + compte[k].total}`).join(" · ")
+        + (muets ? ` · ${muets} sans adresse` : "");
+      const sansDate = { conso: "Sans date de DPE", ges: "Sans date ni conso", facture: "Sur la facture seule", surface: "Sur la surface seule" }[mode];
+      const a = [];
+      if(sansDate) a.push(`<span class="alerte" title="Sans la date du diagnostic, les résultats sont moins sûrs. Saisis-la dans Caractéristiques retenues si tu la trouves.">${RadarUI.SVG.alerte}${sansDate}</span>`);
+      if(trou) a.push(`<span class="alerte" title="${RadarUI.esc(detail)}">${RadarUI.SVG.alerte}Base coupée : réduis le rayon</span>`);
+      if(bboxKo) a.push(`<span class="alerte" title="${RadarUI.esc(detail)}">${RadarUI.SVG.alerte}Recherche par cadre en échec</span>`);
+      return a.length ? `<div class="alertes">${a.join("")}</div>` : "";
     };
 
     if(!res.length){
       const rien = !compte || !compte.national || compte.national.total === 0;
-      $("res").innerHTML = `<div class="vide"><b>${rien ? "La base n'a rien renvoyé." : "Aucun candidat géocodé."}</b><br>
-        ${rien
-          ? `Les critères envoyés ne correspondent à aucun DPE. Vérifie la <b>date du diagnostic</b> — c'est notre seul point sûr — puis « Élargir les critères ».`
-          : `${muets} DPE correspondai${muets>1?"ent":"t"} aux critères, mais sans adresse géocodée dans la base : impossible d'en tirer une adresse.`}
-        </div>` + mouchard();
+      $("res").innerHTML = `<div class="vide"><b>${rien ? "Aucun DPE ne correspond." : "Aucun candidat avec une adresse."}</b><br>
+        ${rien ? "Vérifie la date du DPE, puis élargis." : `${muets} DPE sans adresse géocodée.`}</div>` + alertes();
       return 0;
     }
 
@@ -1110,50 +899,37 @@
     const dans = cands.filter(x => x.d==null || x.d<=rayon);
     const hors = cands.filter(x => x.d!=null && x.d>rayon);
 
-    const fiche = (x,i,idx) => `<div class="fiche ${i===0?"top":""} ${x.d>rayon?"loin":""}" data-i="${idx}">
-      <div class="score">${x.s}</div>
-      <p class="adr">${x.adresse || "Adresse non géocodée"}</p>
-      <div class="meta">${[x.commune,x.cp].filter(Boolean).join(" · ")} — DPE ${x.source}</div>
-      ${x.d!=null?`<div class="dist ${x.d>rayon?"loin":""}">${x.d.toFixed(1)} km de ${centre.nom}</div>`:""}
-      <div class="kv">
-        <span><b>Surface</b> ${x.surface != null ? x.surface + " m²" : "—"}
-          ${(c.surface && x.surface)?`<span class="${Math.abs(x.dS)/c.surface <= 0.05 ? "ok" : "cher"}">${x.dS>=0?"+":""}${x.dS.toFixed(0)} m²</span>`:""}</span>
-        <span><b>Conso</b> ${x.conso != null ? Math.round(x.conso) : "—"}</span>
-        ${x.ges!=null?`<span><b>GES</b> ${x.ges}</span>`:""}
-        ${x.cout!=null?`<span><b>Facture</b> ${Math.round(x.cout)} €</span>`:""}
-        <span><b>Étiq.</b> ${x.dpe}/${x.ges2}</span>
-        <span><b>Constr.</b> ${x.construction||"—"}</span>
+    /* Le score traduit en mots (10/10/2026) : Très probable = même jour de visite, ou score ≥ 110 ;
+       Probable ≥ 80 ; Possible ≥ 55 ; en dessous, Peu probable. Deux premiers à moins de 10 points : « à départager ». */
+    const proba = x => (x.indices.includes("MÊME JOUR DE VISITE") || x.s >= 110) ? ["Très probable", "p-tres"]
+      : x.s >= 80 ? ["Probable", "p-prob"] : x.s >= 55 ? ["Possible", "p-poss"] : ["Peu probable", "p-peu"];
+    const serres = dans.length > 1 && dans[0].s - dans[1].s < 10;
+    const esc = RadarUI.esc;
+    const fiche = (x, i, idx) => {
+      const [lib, cls] = proba(x);
+      return `<div class="carte fiche ${i===0?"top":""} ${x.d>rayon?"loin":""}">
+      <div class="haut"><div style="min-width:0"><p class="adr">${esc(x.adresse || "Adresse non géocodée")}</p><span class="com">${esc([x.commune, x.cp].filter(Boolean).join(" "))}</span></div>
+        <div class="proba"><span class="pill ${cls}">${lib}</span><span class="petit">${serres && i < 2 ? "à départager · " : ""}score ${x.s}</span></div></div>
+      <div class="duo">
+        <a href="https://www.google.com/maps?q&layer=c&cbll=${x.lat},${x.lon}" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="2.5"></circle><path d="M12 8 V14 M9 21 L12 14 L15 21 M8 11 H16"></path></svg>Street View</a>
+        <a href="https://www.google.com/maps/@${x.lat},${x.lon},130m/data=!3m1!1e3" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3 L21 8 L12 13 L3 8 Z M3 12 L12 17 L21 12 M3 16 L12 21 L21 16"></path></svg>Vue aérienne</a>
       </div>
-      <div class="kv" style="margin-top:3px">
-        <span><b>Visite</b> ${x.visite
-            ? `<span class="${c.dateDpe && x.visite === c.dateDpe ? "ok" : ""}">${x.visite}</span>`
-            : "non renseignée"}</span>
-        <span><b>Établi</b> ${x.date || "—"}</span>
-        ${c.dateDpe ? `<span><b>Annonce</b> ${c.dateDpe}</span>` : ""}
-      </div>
-      ${x.indices.length?`<div class="indices">${x.indices.map(i => `<span class="ind">${i}</span>`).join("")}</div>`:""}
-      <div class="ouvrir">Ouvrir la fiche du bien ›</div>
-    </div>`;
+      <div class="sep"></div>
+      <button class="bouton" data-rapport="${idx}">Rapport détaillé ${RadarUI.SVG.suite}</button>
+    </div>`; };
 
     $("res").innerHTML =
-      `<div class="meta" style="margin-bottom:8px">${dans.length} candidat${dans.length>1?"s":""} à moins de ${rayon} km${marge>0?" · élargi":""}</div>`
-      + (() => {
-          const av = {
-            date:       null,   // le meilleur cas : rien à signaler
-            conso:      `Pas de date de diagnostic dans l'annonce : la recherche s'appuie sur la <b>consommation</b>, tolérée à ±25 % — l'annonce la gonfle souvent. Beaucoup de candidats : fie-toi à la distance et à la facture.`,
-            ges:        `Ni date ni consommation : la recherche s'appuie sur l'<b>indice GES</b>, dans le département ${centre.dept}, à ±25 %.`,
-            facture:    `Ni date, ni consommation, ni GES : la recherche s'appuie sur la <b>facture annuelle</b>, dans le département ${centre.dept}. C'est la donnée la moins fiable — la fourchette de l'annonce n'est pas centrée sur celle du DPE.`,
-            surface:    `<b>Seule la surface est exploitable</b> — et c'est la donnée que l'agent maquille le plus (108 m² annoncés « 165 » à Digoin). Cherche dans l'annonce la <b>date de réalisation du diagnostic</b> : c'est notre seul point sûr. Saisis-la, la recherche repart toute seule.`
-          }[mode];
-          return av ? `<div class="note" style="margin-bottom:8px">⚠️ ${av}</div>` : "";
-        })()
+      `<div class="info"><span>${dans.length} adresse${dans.length>1?"s":""} · ${rayon >= 100 ? "département" : rayon + " km"}${marge>0?" · élargi":""}</span></div>`
+      + alertes()
       + dans.map((x,i) => fiche(x, i, cands.indexOf(x))).join("")
-      + (hors.length ? `<details><summary style="font-size:12px;color:#5C6E7E;cursor:pointer;margin:8px 0">${hors.length} autre${hors.length>1?"s":""} au-delà du rayon</summary>${hors.map(x => fiche(x, -1, cands.indexOf(x))).join("")}</details>` : "")
-      + `<p class="note">Le score combine la date du diagnostic, la surface, la consommation, la facture et la distance. <b>C'est toi qui tranches</b> : ouvre la fiche, puis la vue aérienne, et compare avec les photos.</p>`
-      + mouchard();
+      + (hors.length ? `<details class="autres"><summary>${hors.length} au-delà du rayon</summary><div class="pile">${hors.map(x => fiche(x, -1, cands.indexOf(x))).join("")}</div></details>` : "");
 
-    S.querySelectorAll(".fiche").forEach(f => f.onclick = () => {
-      ficheBien(cands[parseInt(f.dataset.i, 10)], v.prix, S, $);
+    $("res").querySelectorAll("[data-rapport]").forEach(b => b.onclick = () => {
+      const x = cands[parseInt(b.dataset.rapport, 10)];
+      $("ecran1").style.display = "none";
+      $("ecran2").style.display = "flex";
+      const annonce = { prix: v.prix, surface: c.surface, dateDpe: c.dateDpe, texte: texteAnnonce() };
+      RadarUI.ouvrirRapport($("ecran2"), { x, annonce, req, BAN, retour: () => { $("ecran2").style.display = "none"; $("ecran1").style.display = "flex"; } });
     });
     return dans.length;
   }
@@ -1174,17 +950,18 @@
   let minuteur = null;
   ["surface","conso","ges","etiqDpe","etiqGes","dateDpe","annee","coutmin","coutmax","commune"].forEach(k => {
     $(k).oninput = () => {
-      $("go").style.display = "block";
+      $("go").style.display = "flex";
       clearTimeout(minuteur);
       minuteur = setTimeout(() => chercher(0), 900);
     };
   });
-  ["type","rayon"].forEach(k => $(k).onchange = () => chercher(0));
-  S.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => chercher(0)));
+  $("type").onchange = () => chercher(0);
+  $("chips").querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => chercher(0)));
 
   if(manque.length){
-    $("statut").textContent = "Non lu sur la page : " + manque.join(", ") + ". Complète à la main.";
-    $("go").style.display = "block";
+    $("statut").textContent = "Non lu sur la page : " + manque.join(", ") + ".";
+    ouvrirCrit(true);   // une lecture ratée ne doit pas rester cachée dans un menu replié
+    $("go").style.display = "flex";
   }else{
     chercher(0);   // tout est là : on cherche sans rien demander
   }
@@ -1206,18 +983,18 @@
 
   function pastille(){
     if(document.getElementById("radar-maison-pastille")) return;
+    RadarUI.police();
     const b = document.createElement("div");
     b.id = "radar-maison-pastille";
     b.style.cssText = "position:fixed;bottom:22px;right:22px;z-index:2147483646";
     const s = b.attachShadow({ mode:"open" });
     s.innerHTML = `<style>
-      button{all:initial;display:flex;align-items:center;gap:8px;cursor:pointer;
-        font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13px;font-weight:600;
-        background:#152535;color:#F6F8F9;padding:11px 16px;border:1px solid #152535;
-        box-shadow:0 3px 14px rgba(21,37,53,.28)}
-      button:hover{background:#B4351F;border-color:#B4351F}
-      .pt{width:7px;height:7px;border-radius:50%;background:#B4351F;box-shadow:0 0 0 3px rgba(180,53,31,.3)}
-      button:hover .pt{background:#F6F8F9;box-shadow:0 0 0 3px rgba(246,248,249,.3)}
+      button{all:initial;display:flex;align-items:center;gap:9px;cursor:pointer;
+        font-family:"Radar Montserrat",Montserrat,"Segoe UI",system-ui,sans-serif;font-size:14px;font-weight:700;
+        background:#1D63ED;color:#fff;padding:13px 18px;border-radius:999px;
+        box-shadow:0 4px 18px rgba(29,99,237,.35)}
+      button:hover{background:#0D2B4E}
+      .pt{width:8px;height:8px;border-radius:50%;background:#3FD0DA;box-shadow:0 0 0 3px rgba(63,208,218,.35)}
     </style><button><span class="pt"></span>Trouver l'adresse</button>`;
     s.querySelector("button").onclick = ouvrirPanneau;
     document.documentElement.appendChild(b);

@@ -171,8 +171,9 @@
     const sev = ic.find(i => i.tags.includes('seveso') && i.d < 5000);
     if (sev) carte('seveso', 3, 'Site Seveso', `${sev.nom} à ${m(sev.d)}`, 'Géorisques');
     const agri = (c.agricoles_m || [])[0];
+    // À moins de 30 m, un bâtiment agricole peut faire partie de la propriété (Changy, 24 m) : on pose la question.
     if (agri != null && agri < 100 && !(elev && elev.d < 1000)) carte('agricole', 1, 'Bâtiment agricole', `à ${m(agri)} de la maison`, 'IGN',
-      { q: [Q('vendeur', 'Quelle activité dans le bâtiment agricole voisin ?', `à ${m(agri)}`)] });
+      { q: [Q('vendeur', agri < 30 ? 'Le bâtiment agricole à côté fait-il partie de la vente ? Sinon, quelle activité ?' : 'Quelle activité dans le bâtiment agricole voisin ?', `à ${m(agri)}`)] });
     const ht = (c.lignes || []).find(l => l.kv >= 63 && l.d < 200);
     if (ht) carte('ligne', 1, 'Ligne haute tension', `${ht.voltage} à ${m(ht.d)}`, 'IGN');
     if (c.voie_ferree_m != null && c.voie_ferree_m < 300) carte('train', 1, 'Voie ferrée', `à ${m(c.voie_ferree_m)}`, 'IGN');

@@ -179,7 +179,7 @@
       const oth = bats.filter(f => !own.has(f) && dist(first(f.geometry), H2) < loin).map(f => ({ u: f.properties.usage_1, a: aire(f.geometry), d: md(f.geometry) })).sort((a, b) => a.d - b.d);
       const res = oth.filter(x => x.u === 'Résidentiel' && x.a >= 40);
       O.isolement = bt.err ? null : { maison_trouvee: !!refB, surface_maison_m2: refB ? Math.round(aire(refB.geometry)) : null,
-        voisin_m: res.length ? res[0].d : null, maisons_100m: res.filter(x => x.d < 100).length, maisons_250m: res.filter(x => x.d < 250).length };
+        voisin_m: res.length ? res[0].d : null, voisins_m: res.slice(0, 5).map(x => x.d), maisons_100m: res.filter(x => x.d < 100).length, maisons_250m: res.filter(x => x.d < 250).length };
       O.agricoles_m = bt.err ? null : oth.filter(x => x.u === 'Agricole').slice(0, 6).map(x => x.d);
       O.lignes = le.err ? null : (le.features || []).map(f => ({ kv: parseInt(f.properties.voltage, 10) || null, voltage: f.properties.voltage || '?', d: md(f.geometry) })).sort((a, b) => a.d - b.d);
       const rmin = {};

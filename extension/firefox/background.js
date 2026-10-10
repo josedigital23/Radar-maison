@@ -9,7 +9,8 @@ browser.browserAction.onClicked.addListener((tab) => {
   }).then(([r]) => {
     if (r === null || r === undefined) {
       // le script de contenu ne tournait pas sur cette page : on l'injecte
-      return browser.tabs.executeScript(tab.id, { file: "content.js" })
+      const fichiers = ["moteur/collecte.js", "moteur/notation.js", "moteur/regles.js", "rapport.js", "content.js"];
+      return fichiers.reduce((p, f) => p.then(() => browser.tabs.executeScript(tab.id, { file: f })), Promise.resolve())
         .then(() => browser.tabs.executeScript(tab.id, {
           code: "window.__radarMaison && window.__radarMaison.basculer();"
         }));

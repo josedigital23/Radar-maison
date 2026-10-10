@@ -10,7 +10,7 @@ import os, shutil, zipfile
 
 ICI = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(ICI, "..", "dist")
-COMMUNS = ["content.js", "icones"]
+COMMUNS = ["content.js", "rapport.js", "moteur", "icones", "montserrat.woff2", "montserrat-OFL.txt"]
 
 for nav in ("chrome", "firefox"):
     cible = os.path.join(DIST, f"radar-maison-{nav}")

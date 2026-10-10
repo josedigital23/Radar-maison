@@ -41,6 +41,19 @@
     return o;
   };
 
+  /* Hors bourg, un bâtiment d'habitation à 2-15 m sur une autre parcelle est le plus souvent une dépendance de la
+     propriété (une ferme est rarement sur une seule parcelle) : Vendenesse, 10/10/2026, « voisin à 8 m » avec 3 maisons
+     seulement à 100 m. On le saute, et on le dit. En bourg (≥ 15 maisons à 250 m), 8 m, c'est un voisin. Mur contre mur
+     (< 2 m), c'est une maison mitoyenne : on garde. */
+  M.voisinEffectif = iso => {
+    if (!iso || iso.voisin_m == null) return { d: null, dependance: null };
+    const vs = iso.voisins_m || [iso.voisin_m];
+    if (iso.maisons_250m >= 15) return { d: vs[0], dependance: null };
+    const i = vs.findIndex(d => d < 2 || d >= 15);
+    if (i <= 0) return { d: i === 0 ? vs[0] : (vs.length ? vs[vs.length - 1] : null), dependance: i === 0 ? null : vs[0] };
+    return { d: vs[i], dependance: vs[0] };
+  };
+
   const palier = (v, seuils) => { if (v == null) return null; for (const [m, s] of seuils) if (v <= m) return s; return 0; };
   const mediane = t => { if (!t.length) return null; const s = [...t].sort((a, b) => a - b), k = Math.floor(s.length / 2); return s.length % 2 ? s[k] : (s[k - 1] + s[k]) / 2; };
   M.mediane = mediane;
@@ -66,7 +79,8 @@
       connexion: pick('connexion', null),
       vis_a_vis: pick('vis_a_vis', T.sansVisAVis ? false : null),
       bourg: pick('bourg', c.isolement ? (c.isolement.maisons_250m >= 15) : null),
-      voisin_m: pick('voisin_m', c.isolement && c.isolement.voisin_m),
+      voisin_m: pick('voisin_m', M.voisinEffectif(c.isolement).d),
+      voisin_dependance: M.voisinEffectif(c.isolement).dependance,
       trajets: {
         travail: pick('min_travail', mn('travail')), ecole: pick('min_ecole', mn('ecole')),
         supermarche: pick('min_supermarche', mn('supermarche')), depannage: pick('min_depannage', mn('depannage')),
