@@ -26,8 +26,8 @@ const sup = [...((await j('https://apicarto.ign.fr/api/gpu/assiette-sup-s?geom='
 O.servitudes_600m = [...new Set(sup.map(f => `${f.properties.suptype || ''} ${f.properties.nomass || ''}`.trim()))];
 
 // 2. DPE
-const dq = P.dpe ? `numero_dpe:${P.dpe}` : `code_insee_ban:${P.insee}`;
-const dp = (await j(`https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines?qs=${encodeURIComponent(dq)}&size=1`)).results?.[0];
+// sans numéro de DPE, on ne prend pas un DPE au hasard dans la commune
+const dp = P.dpe ? (await j(`https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines?qs=${encodeURIComponent(`numero_dpe:${P.dpe}`)}&size=1`)).results?.[0] : null;
 if (dp) { const k = ['numero_dpe','date_etablissement_dpe','adresse_ban','etiquette_dpe','etiquette_ges','surface_habitable_logement','periode_construction','annee_construction','type_energie_principale_chauffage','description_installation_chauffage_n1','type_energie_n1','conso_5_usages_ef_energie_n1','type_energie_n2','conso_5_usages_ef_energie_n2','besoin_chauffage','cout_total_5_usages','qualite_isolation_murs','qualite_isolation_plancher_bas','qualite_isolation_plancher_haut_comble_perdu','qualite_isolation_menuiseries','type_ventilation','indicateur_confort_ete','production_electricite_pv_kwhep_par_an']; O.dpe = Object.fromEntries(k.filter(x => dp[x] != null).map(x => [x, dp[x]])); }
 
 // 3. Trajets fixes
@@ -87,6 +87,36 @@ const ventes = [...by.values()].filter(x => x.maisons === 1 && x.surface > 0 && 
 O.dvf = {ventes_maisons: ventes.length,
   comparables: ventes.filter(x => x.surface >= P.surf * .6 && x.surface <= P.surf * 1.6).map(x => ({date: x.date, valeur: x.valeur, surface: x.surface, terrain: x.terrain, eur_m2: Math.round(x.valeur / x.surface)})).sort((a, b) => b.date.localeCompare(a.date)),
   ventes_de_cette_parcelle: parc ? [...by.values()].filter(x => x.parcelles.has(parc.properties.idu)).map(x => `${x.date} ${x.valeur} €`) : []};
+// 10. Historique des DPE à la même adresse (avant / après travaux)
+const norm = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+const rev = (await j(`https://api-adresse.data.gouv.fr/reverse/?lon=${P.lon}&lat=${P.lat}&limit=1`)).features?.[0]?.properties || {};
+const adr = dp?.adresse_ban || rev.label || '';
+const num = (adr.match(/^(\d+)/) || [])[1], rue = dp?.nom_rue_ban || rev.street || '';
+const hist = adr ? (await j(`https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines?qs=${encodeURIComponent(`adresse_ban:"${adr}"`)}&size=20&select=numero_dpe,date_etablissement_dpe,etiquette_dpe,surface_habitable_logement,type_energie_principale_chauffage`)).results || [] : [];
+const anc = (num && rue) ? (await j(`https://data.ademe.fr/data-fair/api/v1/datasets/dpe-france/lines?qs=${encodeURIComponent(`code_insee_commune_actualise:${P.insee} AND geo_adresse:"${num} ${rue}"`)}&size=20&select=numero_dpe,date_etablissement_dpe,classe_consommation_energie,surface_thermique_lot,geo_adresse`)).results || [] : [];
+O.historique_dpe = [...hist.map(x => `${x.date_etablissement_dpe} · ${x.etiquette_dpe} · ${x.surface_habitable_logement} m² · ${x.type_energie_principale_chauffage} · ${x.numero_dpe}`),
+  ...anc.filter(x => norm(x.geo_adresse).startsWith(norm(num + ' ' + rue))).map(x => `${x.date_etablissement_dpe} · ${x.classe_consommation_energie} · ${x.surface_thermique_lot} m² · ancienne base · ${x.numero_dpe}`)].sort();
+
+// 11. Autorisations d'urbanisme (base nationale SDES) : même rue, mêmes parcelles, bâtiments agricoles de la commune
+const DEST = {1: 'habitation', 2: 'hébergement hôtelier', 3: 'bureaux', 4: 'commerce', 5: 'artisanat', 6: 'industrie', 7: 'agricole', 8: 'entrepôt', 9: 'service public'};
+const mot = norm(rue).split(/\s+/).filter(w => w.length > 3 && !/^(RUE|ROUTE|CHEMIN|IMPASSE|ALLEE|PLACE|LIEU|DIT|GRANDE|PETITE)$/.test(w)).pop() || '';
+const parcs = new Set(parc ? [`${parc.properties.section}${parc.properties.numero}`.replace(/^0+/, '')] : []);
+const permis = [];
+for (const rid of ['65a9e264-7a20-46a9-9d98-66becb817bc3', '8f23d65f-7142-4ac5-94c1-077b028255bf']) {
+  for (let pg = 1; pg <= 6; pg++) {
+    const r = await j(`https://tabular-api.data.gouv.fr/api/resources/${rid}/data/?COMM__exact=${P.insee}&page_size=50&page=${pg}`);
+    for (const x of r.data || []) {
+      const ref = `${x.SEC_CADASTRE1 || ''}${(x.NUM_CADASTRE1 || '').replace(/^0+/, '')}`.replace(/^0+/, '');
+      const memeRue = mot && norm(`${x.ADR_LIBVOIE_TER} ${x.ADR_LIEUDIT_TER}`).includes(mot);
+      const agri = String(x.DESTINATION_PRINCIPALE) === '7';
+      if (!(memeRue || parcs.has(ref) || agri)) continue;
+      const surf = [['hab.', x.SURF_HAB_CREEE], ['agri.', x.SURF_AGR_CREEE], ['locaux', x.SURF_LOC_CREEE]].filter(([, v]) => +v > 0).map(([k, v]) => `${v} m² ${k}`).join(', ');
+      permis.push(`${x.DATE_REELLE_AUTORISATION || x.AN_DEPOT || '?'} · ${x.TYPE_DAU} · ${[x.ADR_NUM_TER, x.ADR_LIBVOIE_TER, x.ADR_LIEUDIT_TER].filter(Boolean).join(' ')} · parcelle ${ref} · ${DEST[x.DESTINATION_PRINCIPALE] || 'logement'}${surf ? ' · ' + surf : ''}${parcs.has(ref) ? ' · ⚑ PARCELLE DU BIEN' : memeRue ? ' · même rue' : ''}`);
+    }
+    if (!r.links?.next) break;
+  }
+}
+O.permis = [...new Set(permis)].sort().reverse().slice(0, 25);
 window.__R = JSON.stringify(O);
 })().catch(e => { window.__R = 'ERREUR ' + e.message; });
 'lancé';
