@@ -300,7 +300,7 @@
           const comps = D.comparables.slice(0, 6);
           corps = nombre('prix', 'Prix demandé', D.prix, '€', 'annonce')
             + lignes([['Prix au m²', R.pm2 ? eur(R.pm2) : '?'], ['Médiane des ventes', R.med ? eur(R.med) + ' /m²' : 'moins de 3 ventes'], ['Ventes comparables', String(R.nbComparables)]])
-            + (comps.length ? lignes(comps.map(v => [`${String(v.date).slice(0, 7)} · ${Math.round(v.surface)} m² · ${v.d >= 1000 ? (v.d / 1000).toFixed(1) + ' km' : v.d + ' m'}`, `${eur(v.valeur)} · ${nbf(v.eur_m2)} €/m²`]))) : '')
+            + (comps.length ? lignes(comps.map(v => [`${String(v.date).slice(0, 7)} · ${Math.round(v.surface)} m² · ${v.d >= 1000 ? (v.d / 1000).toFixed(1) + ' km' : v.d + ' m'}`, `${eur(v.valeur)} · ${nbf(v.eur_m2)} €/m²`])) : '')
             + (c.dvf === null ? '<div class="vide">Les ventes DVF n’ont pas pu être lues.</div>' : ''); break;
         }
         case 'maison': {
